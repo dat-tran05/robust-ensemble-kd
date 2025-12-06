@@ -3,35 +3,48 @@ Evaluation metrics for group robustness experiments.
 Computes per-group accuracy, worst-group accuracy (WGA), and average accuracy.
 """
 
+import time
 import torch
 import numpy as np
 from collections import defaultdict
+from tqdm import tqdm
 
 
-def compute_group_accuracies(model, dataloader, device='cuda'):
+def compute_group_accuracies(model, dataloader, device='cuda', verbose=True):
     """
     Compute per-group and aggregate accuracy metrics.
-    
+
     Args:
         model: Trained model
         dataloader: DataLoader with 'image', 'label', 'group' keys
         device: Device to run evaluation on
-        
+        verbose: If True, show progress bar and timing
+
     Returns:
         results: Dict with per-group accuracy, WGA, and average accuracy
     """
     model.eval()
-    
+
+    total_samples = len(dataloader.dataset)
+    total_batches = len(dataloader)
+
+    if verbose:
+        print(f"  Evaluating {total_samples} samples ({total_batches} batches)...")
+
+    start_time = time.time()
+
     # Track predictions and labels by group
     group_correct = defaultdict(int)
     group_total = defaultdict(int)
-    
+
     all_preds = []
     all_labels = []
     all_groups = []
-    
+
+    iterator = tqdm(dataloader, desc="  Batches", disable=not verbose, leave=False)
+
     with torch.no_grad():
-        for batch in dataloader:
+        for batch in iterator:
             images = batch['image'].to(device)
             labels = batch['label'].to(device)
             groups = batch['group'].to(device)
@@ -70,7 +83,11 @@ def compute_group_accuracies(model, dataloader, device='cuda'):
     
     # Accuracy gap
     acc_gap = max(group_accs.values()) - min(group_accs.values())
-    
+
+    elapsed = time.time() - start_time
+    if verbose:
+        print(f"  Evaluation complete ({elapsed:.1f}s) - WGA: {wga*100:.1f}%")
+
     return {
         'group_accs': group_accs,
         'wga': wga,

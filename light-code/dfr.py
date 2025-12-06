@@ -22,15 +22,16 @@ from sklearn.linear_model import LogisticRegression
 # FEATURE EXTRACTION
 # =============================================================================
 
-def extract_features(model, dataloader, device='cuda'):
+def extract_features(model, dataloader, device='cuda', verbose=True):
     """
     Extract penultimate layer features from a model.
-    
+
     Args:
         model: Model with forward(x, return_features=True) method
         dataloader: DataLoader yielding {'image', 'label', 'group'} dicts
         device: Device to run on
-        
+        verbose: If True, show progress bar
+
     Returns:
         features: np.array [N, D] of penultimate features
         labels: np.array [N] of class labels
@@ -38,13 +39,15 @@ def extract_features(model, dataloader, device='cuda'):
     """
     model.eval()
     model.to(device)
-    
+
     all_features = []
     all_labels = []
     all_groups = []
-    
+
+    iterator = tqdm(dataloader, desc="        Batches", disable=not verbose, leave=False)
+
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Extracting features"):
+        for batch in iterator:
             images = batch['image'].to(device)
             labels = batch['label']
             groups = batch['group']
@@ -60,11 +63,7 @@ def extract_features(model, dataloader, device='cuda'):
     features = np.concatenate(all_features, axis=0)
     labels = np.concatenate(all_labels, axis=0)
     groups = np.concatenate(all_groups, axis=0)
-    
-    print(f"Extracted features: {features.shape}")
-    print(f"  Labels: {np.bincount(labels)}")
-    print(f"  Groups: {np.bincount(groups)}")
-    
+
     return features, labels, groups
 
 
@@ -75,13 +74,13 @@ def extract_features(model, dataloader, device='cuda'):
 def create_balanced_subset(features, labels, groups, balance_type='group'):
     """
     Create a balanced subset for DFR training.
-    
+
     Args:
         features: [N, D] feature array
         labels: [N] label array
         groups: [N] group array
         balance_type: 'group' (balance all 4 groups) or 'class' (balance 2 classes)
-        
+
     Returns:
         balanced_features: Balanced subset of features
         balanced_labels: Balanced subset of labels
@@ -90,36 +89,33 @@ def create_balanced_subset(features, labels, groups, balance_type='group'):
         # Balance all 4 groups (most aggressive debiasing)
         unique_groups = np.unique(groups)
         min_count = min(np.sum(groups == g) for g in unique_groups)
-        
+
         indices = []
         for g in unique_groups:
             group_indices = np.where(groups == g)[0]
             # Subsample to min_count
             selected = np.random.choice(group_indices, size=min_count, replace=False)
             indices.extend(selected)
-        
+
         indices = np.array(indices)
-        print(f"Group balancing: {len(indices)} samples ({min_count} per group)")
-        
+
     elif balance_type == 'class':
         # Balance 2 classes only
         unique_labels = np.unique(labels)
         min_count = min(np.sum(labels == l) for l in unique_labels)
-        
+
         indices = []
         for l in unique_labels:
             label_indices = np.where(labels == l)[0]
             selected = np.random.choice(label_indices, size=min_count, replace=False)
             indices.extend(selected)
-        
+
         indices = np.array(indices)
-        print(f"Class balancing: {len(indices)} samples ({min_count} per class)")
-        
+
     else:
         # No balancing
         indices = np.arange(len(labels))
-        print(f"No balancing: {len(indices)} samples")
-    
+
     np.random.shuffle(indices)
     return features[indices], labels[indices]
 
@@ -131,20 +127,18 @@ def create_balanced_subset(features, labels, groups, balance_type='group'):
 def train_dfr_sklearn(features, labels, C=1.0, class_weight='balanced'):
     """
     Train DFR classifier using sklearn LogisticRegression.
-    
+
     This is FAST (~10 seconds) and works well.
-    
+
     Args:
         features: [N, D] balanced feature array
         labels: [N] balanced label array
         C: Regularization parameter (higher = less regularization)
         class_weight: 'balanced' or None
-        
+
     Returns:
         clf: Trained LogisticRegression classifier
     """
-    print(f"Training DFR classifier (sklearn, C={C})...")
-    
     clf = LogisticRegression(
         C=C,
         class_weight=class_weight,
@@ -152,13 +146,9 @@ def train_dfr_sklearn(features, labels, C=1.0, class_weight='balanced'):
         solver='lbfgs',
         random_state=42
     )
-    
+
     clf.fit(features, labels)
-    
-    # Check training accuracy
-    train_acc = clf.score(features, labels)
-    print(f"  Training accuracy: {train_acc*100:.2f}%")
-    
+
     return clf
 
 
@@ -237,12 +227,12 @@ def train_dfr_pytorch(features, labels, feature_dim, num_classes=2,
 # =============================================================================
 
 def apply_dfr(model, val_loader, device='cuda', method='sklearn',
-              balance_type='group', C=1.0):
+              balance_type='group', C=1.0, verbose=True):
     """
     Apply DFR to debias a model by retraining its last layer.
-    
+
     This is the main function you'll use.
-    
+
     Args:
         model: Trained ERM model (biased)
         val_loader: Validation dataloader (used for balanced training)
@@ -250,50 +240,65 @@ def apply_dfr(model, val_loader, device='cuda', method='sklearn',
         method: 'sklearn' (fast) or 'pytorch' (more control)
         balance_type: 'group' or 'class'
         C: Regularization for sklearn method
-        
+        verbose: If True, show progress
+
     Returns:
         model: Same model with debiased last layer (modified in-place)
     """
-    print("\n" + "="*50)
-    print("Applying DFR (Deep Feature Reweighting)")
-    print("="*50)
-    
-    # 1. Extract features
-    features, labels, groups = extract_features(model, val_loader, device)
-    
-    # 2. Create balanced subset
+    import time
+
+    total_samples = len(val_loader.dataset)
+
+    # Step 1: Extract features
+    if verbose:
+        print(f"      [1/3] Extracting features from {total_samples} samples...")
+    t0 = time.time()
+    features, labels, groups = extract_features(model, val_loader, device, verbose=verbose)
+    if verbose:
+        print(f"            Features: {features.shape} ({time.time()-t0:.1f}s)")
+
+    # Step 2: Create balanced subset
+    if verbose:
+        print("      [2/3] Creating balanced subset...")
+    t0 = time.time()
     balanced_features, balanced_labels = create_balanced_subset(
         features, labels, groups, balance_type
     )
-    
-    # 3. Train new classifier
+    if verbose:
+        print(f"            {len(balanced_labels)} samples ({time.time()-t0:.1f}s)")
+
+    # Step 3: Train new classifier
+    if verbose:
+        print("      [3/3] Training new classifier...")
+    t0 = time.time()
+
     if method == 'sklearn':
         clf = train_dfr_sklearn(balanced_features, balanced_labels, C=C)
-        
-        # 4. Replace model's last layer
+
+        # Replace model's last layer
         with torch.no_grad():
             # sklearn uses shape [num_classes, num_features]
             model.fc.weight.copy_(torch.tensor(clf.coef_, dtype=torch.float32))
             model.fc.bias.copy_(torch.tensor(clf.intercept_, dtype=torch.float32))
-    
+
     elif method == 'pytorch':
         feature_dim = features.shape[1]
         num_classes = len(np.unique(labels))
-        
+
         classifier = train_dfr_pytorch(
             balanced_features, balanced_labels,
             feature_dim, num_classes,
             device=device
         )
-        
-        # 4. Replace model's last layer
+
+        # Replace model's last layer
         with torch.no_grad():
             model.fc.weight.copy_(classifier.weight.data)
             model.fc.bias.copy_(classifier.bias.data)
-    
-    print("DFR applied successfully!")
-    print("="*50 + "\n")
-    
+
+    if verbose:
+        print(f"            Done ({time.time()-t0:.1f}s)")
+
     return model
 
 

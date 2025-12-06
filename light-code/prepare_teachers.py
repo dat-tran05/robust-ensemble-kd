@@ -56,46 +56,58 @@ def find_erm_checkpoints(checkpoint_dir):
 def prepare_single_teacher(erm_info, loaders, device='cuda'):
     """
     Apply DFR to create a debiased version of an ERM teacher.
-    
+
     Args:
         erm_info: Dict with 'path', 'seed', 'filename' for ERM checkpoint
         loaders: Data loaders dict
         device: Device to use
-        
+
     Returns:
         results: Dict with evaluation results
     """
+    import time
+
     checkpoint_path = erm_info['path']
     seed_num = erm_info['seed']
     checkpoint_dir = os.path.dirname(checkpoint_path)
-    
-    print(f"\n{'='*60}")
-    print(f"Preparing Teacher (seed {seed_num})")
-    print(f"  ERM checkpoint: {erm_info['filename']}")
-    print(f"{'='*60}")
-    
-    # Load model
+    step_times = {}
+    total_start = time.time()
+
+    # Step 1: Load model
+    print("  [1/5] Loading model...")
+    t0 = time.time()
     model = get_teacher_model('resnet50', num_classes=2, pretrained=False)
     metadata = load_dfr_checkpoint(model, checkpoint_path)
     model = model.to(device)
-    
-    # Evaluate biased version (just for reference)
-    print("\n--- Evaluating Biased (ERM) Model ---")
+    step_times['load'] = time.time() - t0
+    print(f"        Done ({step_times['load']:.1f}s)")
+
+    # Step 2: Evaluate biased version
+    print("  [2/5] Evaluating biased (ERM) model...")
+    t0 = time.time()
     model.eval()
-    biased_results = compute_group_accuracies(model, loaders['test'], device)
-    print_results(biased_results, "Biased Teacher (ERM)")
-    
-    # Apply DFR to create debiased version
-    print("\n--- Applying DFR ---")
-    apply_dfr(model, loaders['val'], device=device, method='sklearn', balance_type='group')
-    
-    # Evaluate debiased version
-    print("\n--- Evaluating Debiased (DFR) Model ---")
+    biased_results = compute_group_accuracies(model, loaders['test'], device, verbose=False)
+    step_times['eval_biased'] = time.time() - t0
+    print(f"        WGA: {biased_results['wga']*100:.1f}% ({step_times['eval_biased']:.1f}s)")
+
+    # Step 3: Apply DFR
+    print("  [3/5] Applying DFR (retraining last layer)...")
+    t0 = time.time()
+    apply_dfr(model, loaders['val'], device=device, method='sklearn', balance_type='group', verbose=True)
+    step_times['dfr'] = time.time() - t0
+    print(f"        Done ({step_times['dfr']:.1f}s)")
+
+    # Step 4: Evaluate debiased version
+    print("  [4/5] Evaluating debiased (DFR) model...")
+    t0 = time.time()
     model.eval()
-    debiased_results = compute_group_accuracies(model, loaders['test'], device)
-    print_results(debiased_results, "Debiased Teacher (DFR)")
-    
-    # Save debiased version to SAME folder with new naming
+    debiased_results = compute_group_accuracies(model, loaders['test'], device, verbose=False)
+    step_times['eval_debiased'] = time.time() - t0
+    print(f"        WGA: {debiased_results['wga']*100:.1f}% ({step_times['eval_debiased']:.1f}s)")
+
+    # Step 5: Save checkpoint
+    print("  [5/5] Saving checkpoint...")
+    t0 = time.time()
     debiased_filename = f'teacher_{seed_num}_debiased.pt'
     debiased_path = os.path.join(checkpoint_dir, debiased_filename)
     torch.save({
@@ -108,12 +120,15 @@ def prepare_single_teacher(erm_info, loaders, device='cuda'):
         'seed': seed_num,
         'biased_wga': biased_results['wga'],
     }, debiased_path)
-    print(f"  Saved: {debiased_filename}")
-    
+    step_times['save'] = time.time() - t0
+    print(f"        Saved: {debiased_filename} ({step_times['save']:.1f}s)")
+
     # Summary
-    print(f"\n  WGA improvement: {biased_results['wga']*100:.1f}% → {debiased_results['wga']*100:.1f}% "
-          f"(+{(debiased_results['wga']-biased_results['wga'])*100:.1f}%)")
-    
+    total_time = time.time() - total_start
+    improvement = (debiased_results['wga'] - biased_results['wga']) * 100
+    print(f"\n  Summary: {biased_results['wga']*100:.1f}% -> {debiased_results['wga']*100:.1f}% "
+          f"(+{improvement:.1f}%) in {total_time:.1f}s")
+
     return {
         'seed': seed_num,
         'biased': biased_results,
@@ -126,62 +141,92 @@ def prepare_single_teacher(erm_info, loaders, device='cuda'):
 def prepare_all_teachers(checkpoint_dir, data_dir, num_teachers=None, device='cuda'):
     """
     Prepare all teachers from a checkpoint directory.
-    
+
     Args:
         checkpoint_dir: Directory containing erm_seed{N}.pt files
         data_dir: Path to Waterbirds data
         num_teachers: Max number of teachers (None = all)
         device: Device to use
-        
+
     Returns:
         all_results: Dict mapping seed to results
     """
+    import time
+
+    total_start = time.time()
+
     # Find ERM checkpoints
     erm_checkpoints = find_erm_checkpoints(checkpoint_dir)
-    
+
     if len(erm_checkpoints) == 0:
         print(f"ERROR: No erm_seed*.pt files found in {checkpoint_dir}")
         return None
-    
+
     if num_teachers is not None:
         erm_checkpoints = erm_checkpoints[:num_teachers]
-    
-    print(f"\nFound {len(erm_checkpoints)} ERM checkpoints:")
+
+    total = len(erm_checkpoints)
+    print(f"\n{'='*60}")
+    print(f"PREPARING {total} TEACHERS")
+    print(f"{'='*60}")
+    print(f"\nFound {total} ERM checkpoints:")
     for info in erm_checkpoints:
         print(f"  - {info['filename']} (seed {info['seed']})")
-    
+
     # Load data (once for all teachers)
     print("\nLoading data...")
+    data_start = time.time()
     loaders = get_waterbirds_loaders(data_dir, batch_size=64, num_workers=2)
-    
+    print(f"Data loaded ({time.time() - data_start:.1f}s)")
+
     # Process each checkpoint
     all_results = {}
-    
-    for erm_info in erm_checkpoints:
+
+    for i, erm_info in enumerate(erm_checkpoints):
+        print(f"\n{'='*60}")
+        print(f"[{i+1}/{total}] Processing {erm_info['filename']}")
+        print(f"{'='*60}")
+
+        teacher_start = time.time()
         results = prepare_single_teacher(erm_info, loaders, device)
         all_results[erm_info['seed']] = results
-    
+
+        teacher_time = time.time() - teacher_start
+        elapsed_total = time.time() - total_start
+        remaining = (elapsed_total / (i + 1)) * (total - i - 1)
+
+        print(f"\n[{i+1}/{total}] Done in {teacher_time:.1f}s "
+              f"(elapsed: {elapsed_total/60:.1f}min, remaining: ~{remaining/60:.1f}min)")
+
     # Summary
-    print("\n" + "="*60)
-    print("TEACHER PREPARATION COMPLETE")
-    print("="*60)
+    total_time = time.time() - total_start
+    print(f"\n{'='*60}")
+    print(f"TEACHER PREPARATION COMPLETE ({total_time/60:.1f} min)")
+    print(f"{'='*60}")
     print(f"\nAll teachers in: {checkpoint_dir}")
     print(f"\nBiased (ERM):")
     for seed, res in sorted(all_results.items()):
-        print(f"  erm_seed{seed}.pt → WGA={res['biased']['wga']*100:.1f}%")
-    
+        print(f"  erm_seed{seed}.pt -> WGA={res['biased']['wga']*100:.1f}%")
+
     print(f"\nDebiased (DFR):")
     for seed, res in sorted(all_results.items()):
-        print(f"  teacher_{seed}_debiased.pt → WGA={res['debiased']['wga']*100:.1f}%")
-    
+        print(f"  teacher_{seed}_debiased.pt -> WGA={res['debiased']['wga']*100:.1f}%")
+
+    avg_improvement = sum(
+        (r['debiased']['wga'] - r['biased']['wga']) * 100
+        for r in all_results.values()
+    ) / len(all_results)
+    print(f"\nAverage WGA improvement: +{avg_improvement:.1f}%")
+
     # Save summary
     summary_path = os.path.join(checkpoint_dir, 'preparation_summary.pt')
     torch.save({
         'num_teachers': len(all_results),
         'results': all_results,
+        'total_time': total_time,
     }, summary_path)
-    print(f"\nSummary saved to {summary_path}")
-    
+    print(f"Summary saved to {summary_path}")
+
     return all_results
 
 
