@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
 
 from data import get_waterbirds_loaders
-from models import get_teacher_model, get_student_model, create_feature_adapter, load_checkpoint, load_dfr_checkpoint
+from models import get_teacher_model, get_student_model, create_feature_adapter, load_checkpoint, load_teacher_checkpoint
 from losses import CombinedDistillationLoss, EnsembleKDLoss, AGREKDLoss
 from eval import compute_group_accuracies, print_results, MetricLogger
 from config import Config

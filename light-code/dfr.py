@@ -366,7 +366,7 @@ def apply_dfr_to_teachers(teachers, val_loader, device='cuda', method='sklearn',
 if __name__ == '__main__':
     import argparse
     from data import get_waterbirds_loaders
-    from models import get_teacher_model, load_dfr_checkpoint
+    from models import get_teacher_model, load_teacher_checkpoint
     from eval import compute_group_accuracies, print_results
     
     parser = argparse.ArgumentParser()
@@ -387,7 +387,7 @@ if __name__ == '__main__':
     # Load model
     print(f"Loading model from {args.checkpoint}...")
     model = get_teacher_model('resnet50', num_classes=2, pretrained=False)
-    load_dfr_checkpoint(model, args.checkpoint)
+    load_teacher_checkpoint(model, args.checkpoint)
     model = model.to(device)
     
     # Evaluate before DFR

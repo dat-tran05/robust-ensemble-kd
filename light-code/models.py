@@ -180,22 +180,23 @@ def load_checkpoint(model, checkpoint_path, strict=True):
     return {k: v for k, v in checkpoint.items() if k not in ['model_state_dict', 'state_dict']}
 
 
-def load_dfr_checkpoint(model, checkpoint_path, strict=False):
+def load_teacher_checkpoint(model, checkpoint_path, strict=False):
     """
-    Load checkpoint from DFR/spurious_feature_learning repos.
+    Load teacher checkpoint (works for both ERM and debiased formats).
 
-    Handles various checkpoint formats and key naming conventions:
-    - Different dict structures ('model', 'state_dict', 'model_state_dict')
+    Handles various checkpoint formats:
+    - ERM checkpoints from DFR repo: {'model': state_dict}
+    - Debiased checkpoints we create: {'model_state_dict': state_dict}
     - DataParallel 'module.' prefix
-    - Backbone prefix from some repos
+    - Various backbone prefixes
 
     Args:
         model: Model to load weights into
         checkpoint_path: Path to checkpoint file
-        strict: If False, allows missing/extra keys (default: False for flexibility)
+        strict: If False, allows missing/extra keys (default: False)
 
     Returns:
-        metadata: Dict with non-weight checkpoint contents (epoch, accuracy, etc.)
+        metadata: Dict with non-weight checkpoint contents
     """
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
 
@@ -287,7 +288,7 @@ def load_teachers_from_dir(checkpoint_dir, model_fn, num_teachers=None, device='
     for ckpt_file in ckpt_files:
         model = model_fn()
         ckpt_path = os.path.join(checkpoint_dir, ckpt_file)
-        load_dfr_checkpoint(model, ckpt_path)
+        load_teacher_checkpoint(model, ckpt_path)
         model = model.to(device)
         model.eval()
         teachers.append(model)

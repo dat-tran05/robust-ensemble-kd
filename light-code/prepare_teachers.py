@@ -29,7 +29,7 @@ import argparse
 import torch
 
 from data import get_waterbirds_loaders
-from models import get_teacher_model, load_dfr_checkpoint
+from models import get_teacher_model, load_teacher_checkpoint
 from eval import compute_group_accuracies
 from dfr import apply_dfr
 
@@ -76,7 +76,7 @@ def prepare_single_teacher(erm_info, loaders, device='cuda'):
     print("  [1/5] Loading model...")
     t0 = time.time()
     model = get_teacher_model('resnet50', num_classes=2, pretrained=False)
-    load_dfr_checkpoint(model, checkpoint_path)
+    load_teacher_checkpoint(model, checkpoint_path)
     model = model.to(device)
     step_times['load'] = time.time() - t0
     print(f"        Done ({step_times['load']:.1f}s)")
