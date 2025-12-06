@@ -2,93 +2,125 @@
 
 Extending AGRE-KD with class labels and feature distillation for improved group robustness.
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Google Colab)
+
+**Recommended**: Use the complete Colab notebook: `notebooks/colab_full_workflow.ipynb`
+
+This notebook handles everything: setup, data download, teacher preparation, and experiments.
+
+### Manual Setup
 
 ```bash
 # 1. Clone and setup
 git clone https://github.com/YOUR_USERNAME/robust-ensemble-kd.git
-cd robust-ensemble-kd
-pip install torch torchvision wilds tqdm pandas numpy matplotlib
+cd robust-ensemble-kd/light-code
+pip install torch torchvision wilds tqdm pandas numpy matplotlib scikit-learn
 
 # 2. Download Waterbirds data
 python -c "from data import download_waterbirds; download_waterbirds('./data')"
 
-# 3. Test data loading
-python data.py --data_dir ./data/waterbirds_v1.0
+# 3. Download DFR checkpoints to teacher_checkpoints/ (see below)
+
+# 4. Prepare debiased teachers (saves to same folder)
+python prepare_teachers.py \
+    --checkpoint_dir ./teacher_checkpoints \
+    --data_dir ./data/waterbirds_v1.0
+
+# 5. Run experiments
+python train.py --mode student \
+    --data_dir ./data/waterbirds_v1.0 \
+    --teacher_paths ./teacher_checkpoints/teacher_*_debiased.pt \
+    --alpha 0.7 --gamma 0.1 --exp_name exp3_combined
 ```
 
 ## 📁 Project Structure
 
 ```
-robust-ensemble-kd/
-├── data.py      # Waterbirds dataloader with group labels
-├── models.py    # ResNet with feature extraction hooks
-├── losses.py    # KD, feature, and combined losses
-├── eval.py      # WGA and per-group accuracy metrics
-├── config.py    # All hyperparameters
-├── train.py     # Training loops (create during Day 1-2)
+light-code/
+├── data.py              # Waterbirds dataloader with group labels
+├── models.py            # ResNet with feature extraction hooks
+├── losses.py            # KD, feature, AGRE-KD losses
+├── eval.py              # WGA and per-group accuracy metrics
+├── config.py            # All hyperparameters
+├── train.py             # Teacher and student training loops
+├── dfr.py               # Deep Feature Reweighting implementation
+├── prepare_teachers.py  # Prepare debiased teachers from ERM checkpoints
+├── requirements.txt     # Dependencies
 └── notebooks/
-    ├── 01_train_teachers.ipynb
-    ├── 02_train_student.ipynb
-    └── 03_analysis.ipynb
+    ├── colab_full_workflow.ipynb  # ⭐ Complete Colab workflow
+    └── run_experiments.ipynb      # Alternative experiment runner
 ```
 
-## 📋 Implementation Plan
+## 📋 Complete Colab Workflow
 
-### Day 1: Setup + Teachers
+### Step 1: Setup (5 min)
 
-| Task | Person | Time |
-|------|--------|------|
-| Clone repo, download data | Both | 30 min |
-| Test data.py, models.py | A | 1 hr |
-| Train Teacher 1 (seed=42) | A | ~2 hrs |
-| Train Teacher 2 (seed=43) | B | ~2 hrs |
-| Train Teacher 3 (seed=44) | B | ~2 hrs |
+```python
+# Mount Drive & install deps
+from google.colab import drive
+drive.mount('/content/drive')
+!pip install -q wilds tqdm scikit-learn
 
-**Checkpoint**: 3 trained teachers saved to Google Drive
+# Clone repo
+!git clone https://github.com/YOUR_USERNAME/robust-ensemble-kd.git /content/repo
+%cd /content/repo/light-code
+```
 
-### Day 2: Distillation Setup + Baseline
+### Step 2: Download DFR Checkpoints (~5 min)
 
-| Task | Person | Time |
-|------|--------|------|
-| Implement train.py student loop | A | 2 hrs |
-| Verify loss functions work | A | 1 hr |
-| Run baseline (α=1, γ=0) | B | 2 hrs |
-| Start Exp 1: α=0.7 | B | 2 hrs |
+The DFR authors provide pre-trained ERM checkpoints:
 
-**Checkpoint**: Baseline WGA established
+**Source**: https://drive.google.com/drive/folders/1OQ_oPPgxgK_7j_GCt71znyiRj6hqi_UW
 
-### Day 3: Core Experiments
+1. Navigate to: `spurious_feature_learning/results/waterbirds_paper`
+2. Download 3-5 checkpoint files (e.g., `erm_seed0.pt`, `erm_seed1.pt`, etc.)
+3. Upload to your Google Drive: `MyDrive/robust-ensemble-kd/teacher_checkpoints/`
 
-| Task | Person | Time |
-|------|--------|------|
-| Exp 1 ablations: α ∈ {0.5, 0.9} | A | 3 hrs |
-| Exp 2: γ=0.1, γ=0.25 | B | 3 hrs |
-| Exp 3: α=0.7, γ=0.1 | A | 2 hrs |
+### Step 3: Prepare Teachers (~30 min)
 
-**Checkpoint**: All 3 experiments on Waterbirds complete
+```python
+from prepare_teachers import colab_prepare_teachers
 
-### Day 4: Analysis + Buffer
+results = colab_prepare_teachers(
+    checkpoint_dir='/content/drive/MyDrive/robust-ensemble-kd/teacher_checkpoints',
+    data_dir='/content/drive/MyDrive/robust-ensemble-kd/data/waterbirds_v1.0',
+    num_teachers=5
+)
+```
 
-| Task | Person | Time |
-|------|--------|------|
-| Compile results | Both | 2 hrs |
-| Create visualizations | A | 2 hrs |
-| Run additional ablations if needed | B | 4 hrs |
+This adds debiased teachers to the same folder:
+- `erm_seed0.pt` ... `erm_seed4.pt` → Biased (~70% WGA) - **you download these**
+- `teacher_0_debiased.pt` ... `teacher_4_debiased.pt` → Debiased (~92% WGA) - **created by DFR**
 
-### Day 5: Write-up
+### Step 4: Run Experiments (~2-3 hrs each)
 
-| Task | Person | Time |
-|------|--------|------|
-| Draft blog post | A | 4 hrs |
-| Create figures/tables | B | 2 hrs |
-| Review and finalize | Both | 2 hrs |
+```python
+from config import Config
+from train import train_student
 
----
+# Load teachers
+teachers = load_teachers(...)  # See notebook for details
+
+# Baseline
+config = Config(alpha=1.0, gamma=0.0, epochs=30)
+train_student(config, teachers, exp_name='baseline')
+
+# Experiment 1: Add class labels
+config = Config(alpha=0.7, gamma=0.0, epochs=30)
+train_student(config, teachers, exp_name='exp1_alpha07')
+
+# Experiment 2: Feature distillation  
+config = Config(alpha=1.0, gamma=0.1, epochs=30)
+train_student(config, teachers, exp_name='exp2_gamma01')
+
+# Experiment 3: Combined
+config = Config(alpha=0.7, gamma=0.1, epochs=30)
+train_student(config, teachers, exp_name='exp3_combined')
+```
 
 ## 🔧 Usage Examples
 
-### 1. Load Data
+### Load Data
 
 ```python
 from data import get_waterbirds_loaders
@@ -98,11 +130,10 @@ loaders = get_waterbirds_loaders(
     batch_size=32,
     augment=True
 )
-
 # loaders['train'], loaders['val'], loaders['test']
 ```
 
-### 2. Create Models
+### Create Models
 
 ```python
 from models import get_teacher_model, get_student_model, create_feature_adapter
@@ -117,7 +148,7 @@ student = get_student_model('resnet18', num_classes=2, pretrained=True)
 adapter = create_feature_adapter('resnet18', 'resnet50', 'pooled')
 ```
 
-### 3. Extract Features
+### Extract Features
 
 ```python
 # Forward pass with features
@@ -126,30 +157,35 @@ logits, features = teacher(images, return_features=True)
 # features['layer4'] = spatial features [B, 2048, 7, 7]
 ```
 
-### 4. Compute Losses
+### Apply DFR (Debiasing)
 
 ```python
-from losses import CombinedDistillationLoss
+from dfr import apply_dfr
 
-# Experiment 1: Add class labels (α < 1)
-loss_fn = CombinedDistillationLoss(alpha=0.7, gamma=0.0)
-
-# Experiment 2: Feature distillation (γ > 0)
-loss_fn = CombinedDistillationLoss(alpha=1.0, gamma=0.1, 
-                                    student_dim=512, teacher_dim=2048)
-
-# Experiment 3: Combined
-loss_fn = CombinedDistillationLoss(alpha=0.7, gamma=0.1,
-                                    student_dim=512, teacher_dim=2048)
-
-# Usage
-loss, loss_dict = loss_fn(
-    student_logits, teacher_logits, labels,
-    student_features, teacher_features  # For γ > 0
-)
+# Transform biased model (~70% WGA) to debiased (~92% WGA)
+apply_dfr(model, val_loader, device='cuda', method='sklearn', balance_type='group')
 ```
 
-### 5. Evaluate
+### Compute Losses
+
+```python
+from losses import AGREKDLoss
+
+# AGRE-KD with class labels and features
+loss_fn = AGREKDLoss(alpha=0.7, gamma=0.1, temperature=4.0,
+                      student_dim=512, teacher_dim=2048)
+
+# Compute teacher weights (gradient-based)
+weights = loss_fn.compute_teacher_weights(student, teacher_logits_list, 
+                                          biased_logits, student_logits)
+
+# Compute loss
+loss, loss_dict = loss_fn(student_logits, teacher_logits_list, labels,
+                          student_features, teacher_features_list,
+                          teacher_weights=weights)
+```
+
+### Evaluate
 
 ```python
 from eval import compute_group_accuracies, print_results
@@ -159,31 +195,24 @@ print_results(results)
 # Shows: per-group acc, WGA, average acc, accuracy gap
 ```
 
----
-
-## 📊 Expected Results (Baselines to Beat)
+## 📊 Expected Results
 
 | Method | Waterbirds WGA | Avg Acc |
 |--------|----------------|---------|
 | ERM (single model) | 68-72% | 97% |
 | Deep Ensemble (3 models) | 75-80% | 96% |
-| JTT | 86-87% | 93% |
 | DFR | 91-93% | 94% |
 | AGRE-KD (paper) | ~85-88% | 92% |
-
-**Your target**: Match or exceed AGRE-KD baseline (~85% WGA)
-
----
+| **Your target** | ≥85% | ≥90% |
 
 ## 🔬 Your Three Experiments
 
 ### Experiment 1: Class Labels (α < 1, γ = 0)
 
-**Hypothesis**: Adding ground-truth supervision alongside KD helps when teachers are biased.
+**Hypothesis**: Adding ground-truth supervision alongside KD helps when teachers make mistakes.
 
 ```python
-# Test α ∈ {0.5, 0.7, 0.9}
-config = Config(alpha=0.7, gamma=0.0)
+config = Config(alpha=0.7, gamma=0.0)  # Test α ∈ {0.5, 0.7, 0.9}
 ```
 
 ### Experiment 2: Feature Distillation (α = 1, γ > 0)
@@ -191,8 +220,7 @@ config = Config(alpha=0.7, gamma=0.0)
 **Hypothesis**: Distilling penultimate features transfers more robust representations.
 
 ```python
-# Test γ ∈ {0.1, 0.25}
-config = Config(alpha=1.0, gamma=0.1)
+config = Config(alpha=1.0, gamma=0.1)  # Test γ ∈ {0.1, 0.25}
 ```
 
 ### Experiment 3: Combined (α < 1, γ > 0)
@@ -203,60 +231,58 @@ config = Config(alpha=1.0, gamma=0.1)
 config = Config(alpha=0.7, gamma=0.1)
 ```
 
----
+## 💾 Google Drive Structure
 
-## 💾 Google Colab Setup
-
-Paste this in the first cell of every notebook:
-
-```python
-# Mount Drive
-from google.colab import drive
-drive.mount('/content/drive')
-
-# Paths
-DRIVE_PATH = '/content/drive/MyDrive/robust-ensemble-kd'
-import os
-os.makedirs(f'{DRIVE_PATH}/checkpoints', exist_ok=True)
-os.makedirs(f'{DRIVE_PATH}/data', exist_ok=True)
-
-# Clone repo
-!git clone https://github.com/YOUR_USERNAME/robust-ensemble-kd.git /content/repo
-%cd /content/repo
-
-# Install deps
-!pip install -q wilds tqdm
-
-# Add to path
-import sys
-sys.path.insert(0, '/content/repo')
-
-# Verify GPU
-import torch
-print(f"GPU: {torch.cuda.get_device_name(0)}")
 ```
-
----
+MyDrive/robust-ensemble-kd/
+├── data/
+│   └── waterbirds_v1.0/           # Dataset (downloaded via WILDS)
+├── teacher_checkpoints/            # All teachers in ONE folder
+│   ├── erm_seed0.pt               # Biased (downloaded from DFR)
+│   ├── erm_seed1.pt               # Biased (downloaded from DFR)
+│   ├── erm_seed2.pt               # Biased (downloaded from DFR)
+│   ├── teacher_0_debiased.pt      # Debiased (created by prepare_teachers.py)
+│   ├── teacher_1_debiased.pt      # Debiased (created by prepare_teachers.py)
+│   ├── teacher_2_debiased.pt      # Debiased (created by prepare_teachers.py)
+│   └── ...
+├── checkpoints/                    # Student training checkpoints
+│   ├── student_baseline_best.pt
+│   ├── student_exp1_alpha07_best.pt
+│   └── ...
+└── logs/
+    └── experiment_results.json
+```
 
 ## 🚨 Troubleshooting
 
-**Colab disconnects**: Checkpoint every 5-10 epochs to Google Drive
+**Colab disconnects**: Checkpoints saved every 5 epochs. Re-run cells 1-4, then resume.
 
-**OOM errors**: Reduce batch_size to 16, use `torch.cuda.empty_cache()`
+**OOM errors**: Reduce `batch_size` to 16, use `torch.cuda.empty_cache()`
 
 **Slow data loading**: Copy data to Colab local storage:
 ```bash
-!cp -r /content/drive/MyDrive/robust-ensemble-kd/data /content/data_local
+!cp -r /content/drive/MyDrive/.../data /content/data_local
 ```
 
 **WILDS download fails**: Download manually from:
 https://nlp.stanford.edu/data/dro/waterbird_complete95_forest2water2.tar.gz
 
----
+**DFR checkpoints not found**: Download from:
+https://drive.google.com/drive/folders/1OQ_oPPgxgK_7j_GCt71znyiRj6hqi_UW
+
+## ⏱️ Time Estimates (T4 GPU)
+
+| Task | Time |
+|------|------|
+| Setup & data download | 10 min |
+| Prepare 5 teachers (DFR) | 30 min |
+| Student training (30 epochs) | 2-3 hrs |
+| Full experiment suite (6 configs) | ~15-20 hrs |
 
 ## 📚 References
 
 - AGRE-KD: [arXiv:2411.14984](https://arxiv.org/abs/2411.14984)
 - DFR: [arXiv:2204.02937](https://arxiv.org/abs/2204.02937) 
+- DFR Checkpoints: [Google Drive](https://drive.google.com/drive/folders/1OQ_oPPgxgK_7j_GCt71znyiRj6hqi_UW)
 - Group DRO: [github.com/kohpangwei/group_DRO](https://github.com/kohpangwei/group_DRO)
 - WILDS: [github.com/p-lambda/wilds](https://github.com/p-lambda/wilds)
