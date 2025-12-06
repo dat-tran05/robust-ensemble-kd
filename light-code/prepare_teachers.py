@@ -27,11 +27,10 @@ import os
 import re
 import argparse
 import torch
-from tqdm import tqdm
 
 from data import get_waterbirds_loaders
 from models import get_teacher_model, load_dfr_checkpoint
-from eval import compute_group_accuracies, print_results
+from eval import compute_group_accuracies
 from dfr import apply_dfr
 
 
@@ -77,7 +76,7 @@ def prepare_single_teacher(erm_info, loaders, device='cuda'):
     print("  [1/5] Loading model...")
     t0 = time.time()
     model = get_teacher_model('resnet50', num_classes=2, pretrained=False)
-    metadata = load_dfr_checkpoint(model, checkpoint_path)
+    load_dfr_checkpoint(model, checkpoint_path)
     model = model.to(device)
     step_times['load'] = time.time() - t0
     print(f"        Done ({step_times['load']:.1f}s)")
@@ -204,11 +203,11 @@ def prepare_all_teachers(checkpoint_dir, data_dir, num_teachers=None, device='cu
     print(f"TEACHER PREPARATION COMPLETE ({total_time/60:.1f} min)")
     print(f"{'='*60}")
     print(f"\nAll teachers in: {checkpoint_dir}")
-    print(f"\nBiased (ERM):")
+    print("\nBiased (ERM):")
     for seed, res in sorted(all_results.items()):
         print(f"  erm_seed{seed}.pt -> WGA={res['biased']['wga']*100:.1f}%")
 
-    print(f"\nDebiased (DFR):")
+    print("\nDebiased (DFR):")
     for seed, res in sorted(all_results.items()):
         print(f"  teacher_{seed}_debiased.pt -> WGA={res['debiased']['wga']*100:.1f}%")
 

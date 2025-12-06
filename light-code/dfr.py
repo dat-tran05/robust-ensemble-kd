@@ -277,9 +277,23 @@ def apply_dfr(model, val_loader, device='cuda', method='sklearn',
 
         # Replace model's last layer
         with torch.no_grad():
-            # sklearn uses shape [num_classes, num_features]
-            model.fc.weight.copy_(torch.tensor(clf.coef_, dtype=torch.float32))
-            model.fc.bias.copy_(torch.tensor(clf.intercept_, dtype=torch.float32))
+            # Handle binary classification: sklearn returns [1, D] for 2 classes
+            # Convert to PyTorch [2, D] format
+            if clf.coef_.shape[0] == 1:
+                # Binary classification: sklearn gives [1, D], need [2, D]
+                # Class 0 logit = 0, Class 1 logit = sklearn decision function
+                new_weight = torch.zeros(2, clf.coef_.shape[1], dtype=torch.float32)
+                new_bias = torch.zeros(2, dtype=torch.float32)
+                new_weight[1] = torch.tensor(clf.coef_[0], dtype=torch.float32)
+                new_bias[1] = torch.tensor(clf.intercept_[0], dtype=torch.float32)
+            else:
+                # Multi-class: sklearn gives [C, D], use directly
+                new_weight = torch.tensor(clf.coef_, dtype=torch.float32)
+                new_bias = torch.tensor(clf.intercept_, dtype=torch.float32)
+
+            # Copy to model (handles device transfer)
+            model.fc.weight.copy_(new_weight.to(model.fc.weight.device))
+            model.fc.bias.copy_(new_bias.to(model.fc.bias.device))
 
     elif method == 'pytorch':
         feature_dim = features.shape[1]
