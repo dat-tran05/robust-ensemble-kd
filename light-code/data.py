@@ -115,7 +115,7 @@ class WaterbirdsDataset(Dataset):
 # DATALOADER FACTORY
 # =============================================================================
 
-def get_waterbirds_loaders(root_dir, batch_size=32, num_workers=4, augment=True):
+def get_waterbirds_loaders(root_dir, batch_size=32, num_workers=2, augment=True):
     """
     Get train/val/test dataloaders for Waterbirds.
     

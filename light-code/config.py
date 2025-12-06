@@ -13,8 +13,8 @@ class Config:
     
     # Data
     data_dir: str = './data/waterbirds_v1.0'
-    batch_size: int = 32
-    num_workers: int = 4
+    batch_size: int = 128
+    num_workers: int = 2
     augment: bool = True
     
     # Model
