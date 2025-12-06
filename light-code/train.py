@@ -5,11 +5,13 @@ Handles checkpointing, resuming, and logging.
 
 import os
 import time
+import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
+import numpy as np
 
 from data import get_waterbirds_loaders
 from models import get_teacher_model, get_student_model, create_feature_adapter, load_checkpoint, load_teacher_checkpoint
@@ -250,6 +252,7 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
     logger = MetricLogger()
 
     for epoch in range(start_epoch, config.epochs):
+        epoch_start = time.time()
         student.train()
         if adapter:
             adapter.train()
@@ -322,28 +325,43 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
 
         # Average weights for logging
         if epoch_weights:
-            import numpy as np
             avg_weights = np.mean(epoch_weights, axis=0).tolist()
         else:
             avg_weights = [1.0 / len(teachers)] * len(teachers)
 
         # Evaluate
-        val_results = compute_group_accuracies(student, loaders['val'], device)
+        val_results = compute_group_accuracies(student, loaders['val'], device, verbose=False)
 
-        # Log
+        # Epoch timing
+        epoch_time = time.time() - epoch_start
+        remaining_epochs = config.epochs - epoch - 1
+        eta_minutes = (epoch_time * remaining_epochs) / 60
+
+        # Log with per-group accuracy
+        current_lr = scheduler.get_last_lr()[0]
         logger.log({
             'epoch': epoch + 1,
             **{f'loss_{k}': v for k, v in epoch_losses.items()},
             'val_wga': val_results['wga'],
             'val_avg': val_results['avg_acc'],
+            'val_group_0': val_results['group_accs'][0],
+            'val_group_1': val_results['group_accs'][1],
+            'val_group_2': val_results['group_accs'][2],
+            'val_group_3': val_results['group_accs'][3],
             'teacher_weights': avg_weights,
+            'lr': current_lr,
+            'epoch_time': epoch_time,
         })
 
-        print(f"Epoch {epoch+1}: Loss={epoch_losses['total']:.4f}, "
-              f"Val WGA={val_results['wga']*100:.2f}%, "
-              f"Val Avg={val_results['avg_acc']*100:.2f}%")
+        # Enhanced epoch summary
+        print(f"\nEpoch {epoch+1}/{config.epochs}")
+        print(f"  Loss: total={epoch_losses['total']:.4f}, kd={epoch_losses['kd']:.4f}")
+        print(f"  Val WGA: {val_results['wga']*100:.2f}% | Avg: {val_results['avg_acc']*100:.2f}%")
+        print(f"  Groups: G0={val_results['group_accs'][0]*100:.1f}%, G1={val_results['group_accs'][1]*100:.1f}%, "
+              f"G2={val_results['group_accs'][2]*100:.1f}%, G3={val_results['group_accs'][3]*100:.1f}%")
         if use_agre:
             print(f"  Teacher weights: {[f'{w:.3f}' for w in avg_weights]}")
+        print(f"  Time: {epoch_time:.1f}s | ETA: {eta_minutes:.1f}min")
 
         # Save best
         if val_results['wga'] > best_wga:
@@ -372,6 +390,11 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
                 'scheduler_state_dict': scheduler.state_dict(),
                 'best_wga': best_wga,
             }, save_path)
+
+        # Save training log to JSON (human-readable, updated each epoch)
+        log_path = os.path.join(config.checkpoint_dir, f'student_{exp_name}_log.json')
+        with open(log_path, 'w') as f:
+            json.dump(logger.to_dict(), f, indent=2)
 
     # Final test evaluation
     print(f"\nFinal Test Evaluation ({exp_name}):")
