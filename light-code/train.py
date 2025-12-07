@@ -14,7 +14,7 @@ from tqdm import tqdm
 import numpy as np
 
 from data import get_waterbirds_loaders
-from models import get_teacher_model, get_student_model, create_feature_adapter, load_checkpoint, load_teacher_checkpoint
+from models import get_teacher_model, get_student_model, load_checkpoint, load_teacher_checkpoint
 from losses import CombinedDistillationLoss, EnsembleKDLoss, AGREKDLoss
 from eval import compute_group_accuracies, print_results, MetricLogger
 from config import Config
@@ -193,15 +193,6 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
         config.pretrained
     ).to(device)
 
-    # Feature adapter (if using feature distillation)
-    adapter = None
-    if config.gamma > 0:
-        adapter = create_feature_adapter(
-            config.student_arch,
-            config.teacher_arch,
-            'pooled'
-        ).to(device)
-
     # Put teachers in eval mode on device
     for t in teachers:
         t.to(device)
@@ -221,10 +212,10 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
         teacher_dim=2048 if config.teacher_arch == 'resnet50' else 512,
     ).to(device)
 
-    # Optimizer (include adapter params if present)
+    # Optimizer (include feature adapter params from loss function if using feature distillation)
     params = list(student.parameters())
-    if adapter is not None:
-        params += list(adapter.parameters())
+    if config.gamma > 0 and loss_fn.feat_loss is not None:
+        params += list(loss_fn.feat_loss.adapter.parameters())
 
     optimizer = optim.SGD(
         params,
@@ -240,8 +231,8 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
     if checkpoint_path and os.path.exists(checkpoint_path):
         ckpt = torch.load(checkpoint_path)
         student.load_state_dict(ckpt['model_state_dict'])
-        if adapter and ckpt.get('adapter_state_dict'):
-            adapter.load_state_dict(ckpt['adapter_state_dict'])
+        if config.gamma > 0 and loss_fn.feat_loss is not None and ckpt.get('adapter_state_dict'):
+            loss_fn.feat_loss.adapter.load_state_dict(ckpt['adapter_state_dict'])
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
         if 'scheduler_state_dict' in ckpt:
             scheduler.load_state_dict(ckpt['scheduler_state_dict'])
@@ -255,8 +246,8 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
     for epoch in range(start_epoch, config.epochs):
         epoch_start = time.time()
         student.train()
-        if adapter:
-            adapter.train()
+        if config.gamma > 0 and loss_fn.feat_loss is not None:
+            loss_fn.feat_loss.train()
 
         epoch_losses = {'total': 0, 'kd': 0, 'ce': 0, 'feat': 0}
         epoch_weights = []
@@ -268,11 +259,7 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
 
             # Student forward (need gradients for AGRE-KD weight computation)
             s_logits, s_features = student(images, return_features=True)
-            s_feat = s_features['pooled']
-
-            # Adapt student features if needed
-            if adapter:
-                s_feat = adapter(s_feat)
+            s_feat = s_features['pooled']  # Will be adapted by loss_fn.feat_loss if gamma > 0
 
             # Teacher forward (no grad for logits, but need graph for AGRE-KD)
             t_logits_list = []
@@ -371,7 +358,7 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': student.state_dict(),
-                'adapter_state_dict': adapter.state_dict() if adapter else None,
+                'adapter_state_dict': loss_fn.feat_loss.adapter.state_dict() if (config.gamma > 0 and loss_fn.feat_loss is not None) else None,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'best_wga': best_wga,
@@ -386,7 +373,7 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': student.state_dict(),
-                'adapter_state_dict': adapter.state_dict() if adapter else None,
+                'adapter_state_dict': loss_fn.feat_loss.adapter.state_dict() if (config.gamma > 0 and loss_fn.feat_loss is not None) else None,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'best_wga': best_wga,
@@ -396,6 +383,24 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
         log_path = os.path.join(config.checkpoint_dir, f'student_{exp_name}_log.json')
         with open(log_path, 'w') as f:
             json.dump(logger.to_dict(), f, indent=2)
+
+    # Load best checkpoint before final test evaluation
+    best_path = os.path.join(config.checkpoint_dir, f'student_{exp_name}_best.pt')
+    if os.path.exists(best_path):
+        print("\nLoading best checkpoint for final evaluation...")
+        checkpoint = torch.load(best_path, map_location=device)
+        student.load_state_dict(checkpoint['model_state_dict'])
+
+        # Reload adapter if it exists (for feature distillation)
+        if config.gamma > 0 and loss_fn.feat_loss is not None and checkpoint.get('adapter_state_dict') is not None:
+            loss_fn.feat_loss.adapter.load_state_dict(checkpoint['adapter_state_dict'])
+
+        best_epoch = checkpoint.get('epoch', -1) + 1
+        best_wga = checkpoint.get('best_wga', 0) * 100
+        print(f"  Loaded from epoch {best_epoch} with val WGA: {best_wga:.2f}%")
+    else:
+        print(f"\nWarning: Best checkpoint not found at {best_path}")
+        print("  Using last epoch model for final evaluation")
 
     # Final test evaluation
     print(f"\nFinal Test Evaluation ({exp_name}):")
