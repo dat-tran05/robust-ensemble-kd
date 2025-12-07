@@ -20,6 +20,16 @@ from eval import compute_group_accuracies, print_results, MetricLogger
 from config import Config
 
 
+def _get_adapter_state_dict(loss_fn, use_multilayer):
+    """Helper to get adapter state dict for checkpointing."""
+    if loss_fn.feat_loss is None:
+        return None
+    if use_multilayer:
+        return loss_fn.feat_loss.adapters.state_dict()
+    else:
+        return loss_fn.feat_loss.adapter.state_dict()
+
+
 # =============================================================================
 # TEACHER TRAINING (ERM)
 # =============================================================================
@@ -151,11 +161,12 @@ def train_teacher(config, checkpoint_path=None):
 # =============================================================================
 
 def train_student(config, teachers, biased_model=None, exp_name='baseline',
-                  use_agre=True, checkpoint_path=None):
+                  use_agre=True, checkpoint_path=None, layer_gammas=None):
     """
     Train a student model via knowledge distillation from teacher ensemble.
 
     Supports both AVER (simple averaging) and AGRE-KD (gradient-based weighting).
+    Supports both single-layer and multi-layer feature distillation.
 
     Args:
         config: Config object (with alpha, gamma, etc.)
@@ -164,6 +175,9 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
         exp_name: Experiment name for saving
         use_agre: If True, use AGRE-KD gradient weighting; else use simple averaging
         checkpoint_path: Optional path to resume from
+        layer_gammas: Optional dict {layer_name: gamma} for multi-layer distillation.
+                      If provided, overrides config.gamma. Example:
+                      {'layer3': 0.15, 'layer4': 0.35} for total gamma = 0.5
 
     Returns:
         student: Trained student model
@@ -172,7 +186,15 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
     """
     device = torch.device(config.device if torch.cuda.is_available() else 'cpu')
     method = "AGRE-KD" if use_agre else "AVER"
-    print(f"\nTraining student: {exp_name} (α={config.alpha}, γ={config.gamma}, method={method})")
+
+    # Determine if using multi-layer
+    use_multilayer = layer_gammas is not None and any(g > 0 for g in layer_gammas.values())
+    effective_gamma = sum(layer_gammas.values()) if use_multilayer else config.gamma
+
+    if use_multilayer:
+        print(f"\nTraining student: {exp_name} (α={config.alpha}, layer_gammas={layer_gammas}, method={method})")
+    else:
+        print(f"\nTraining student: {exp_name} (α={config.alpha}, γ={config.gamma}, method={method})")
 
     # Use first teacher as biased model if not specified
     if biased_model is None and use_agre:
@@ -206,16 +228,24 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
     # Must move to device for feature distillation adapter (when gamma > 0)
     loss_fn = AGREKDLoss(
         alpha=config.alpha,
-        gamma=config.gamma,
+        gamma=config.gamma if not use_multilayer else 0.0,  # Use layer_gammas instead
+        layer_gammas=layer_gammas,  # For multi-layer distillation
         temperature=config.temperature,
         student_dim=512 if config.student_arch == 'resnet18' else 2048,
         teacher_dim=2048 if config.teacher_arch == 'resnet50' else 512,
+        student_arch=config.student_arch,
+        teacher_arch=config.teacher_arch,
     ).to(device)
 
     # Optimizer (include feature adapter params from loss function if using feature distillation)
     params = list(student.parameters())
-    if config.gamma > 0 and loss_fn.feat_loss is not None:
-        params += list(loss_fn.feat_loss.adapter.parameters())
+    if loss_fn.feat_loss is not None:
+        if use_multilayer:
+            # Multi-layer: adapters is a ModuleDict
+            params += list(loss_fn.feat_loss.adapters.parameters())
+        else:
+            # Single-layer: adapter is a single module
+            params += list(loss_fn.feat_loss.adapter.parameters())
 
     optimizer = optim.SGD(
         params,
@@ -231,8 +261,11 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
     if checkpoint_path and os.path.exists(checkpoint_path):
         ckpt = torch.load(checkpoint_path)
         student.load_state_dict(ckpt['model_state_dict'])
-        if config.gamma > 0 and loss_fn.feat_loss is not None and ckpt.get('adapter_state_dict'):
-            loss_fn.feat_loss.adapter.load_state_dict(ckpt['adapter_state_dict'])
+        if loss_fn.feat_loss is not None and ckpt.get('adapter_state_dict'):
+            if use_multilayer:
+                loss_fn.feat_loss.adapters.load_state_dict(ckpt['adapter_state_dict'])
+            else:
+                loss_fn.feat_loss.adapter.load_state_dict(ckpt['adapter_state_dict'])
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
         if 'scheduler_state_dict' in ckpt:
             scheduler.load_state_dict(ckpt['scheduler_state_dict'])
@@ -246,7 +279,7 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
     for epoch in range(start_epoch, config.epochs):
         epoch_start = time.time()
         student.train()
-        if config.gamma > 0 and loss_fn.feat_loss is not None:
+        if loss_fn.feat_loss is not None:
             loss_fn.feat_loss.train()
 
         epoch_losses = {'total': 0, 'kd': 0, 'ce': 0, 'feat': 0}
@@ -259,7 +292,6 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
 
             # Student forward (need gradients for AGRE-KD weight computation)
             s_logits, s_features = student(images, return_features=True)
-            s_feat = s_features['pooled']  # Will be adapted by loss_fn.feat_loss if gamma > 0
 
             # Teacher forward (no grad for logits, but need graph for AGRE-KD)
             t_logits_list = []
@@ -268,7 +300,18 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
                 for teacher in teachers:
                     t_logits, t_features = teacher(images, return_features=True)
                     t_logits_list.append(t_logits)
-                    t_feat_list.append(t_features['pooled'])
+                    if use_multilayer:
+                        # Multi-layer: store full feature dict
+                        t_feat_list.append(t_features)
+                    else:
+                        # Single-layer: just pooled features
+                        t_feat_list.append(t_features['pooled'])
+
+            # Prepare student features for loss
+            if use_multilayer:
+                s_feat = s_features  # Full dict for multi-layer
+            else:
+                s_feat = s_features['pooled']  # Just pooled for single-layer
 
             # Compute teacher weights (AGRE-KD or uniform)
             if use_agre and biased_model is not None:
@@ -287,8 +330,8 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
             # Compute loss
             loss, loss_dict = loss_fn(
                 s_logits, t_logits_list, labels,
-                s_feat if config.gamma > 0 else None,
-                t_feat_list if config.gamma > 0 else None,
+                s_feat if effective_gamma > 0 else None,
+                t_feat_list if effective_gamma > 0 else None,
                 teacher_weights=teacher_weights
             )
 
@@ -358,12 +401,14 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': student.state_dict(),
-                'adapter_state_dict': loss_fn.feat_loss.adapter.state_dict() if (config.gamma > 0 and loss_fn.feat_loss is not None) else None,
+                'adapter_state_dict': _get_adapter_state_dict(loss_fn, use_multilayer),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'best_wga': best_wga,
                 'val_results': val_results,
                 'config': vars(config) if hasattr(config, '__dict__') else config,
+                'use_multilayer': use_multilayer,
+                'layer_gammas': layer_gammas,
             }, save_path)
             print(f"  ✓ New best WGA: {best_wga*100:.2f}%")
 
@@ -373,7 +418,7 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': student.state_dict(),
-                'adapter_state_dict': loss_fn.feat_loss.adapter.state_dict() if (config.gamma > 0 and loss_fn.feat_loss is not None) else None,
+                'adapter_state_dict': _get_adapter_state_dict(loss_fn, use_multilayer),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'best_wga': best_wga,
@@ -392,8 +437,11 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
         student.load_state_dict(checkpoint['model_state_dict'])
 
         # Reload adapter if it exists (for feature distillation)
-        if config.gamma > 0 and loss_fn.feat_loss is not None and checkpoint.get('adapter_state_dict') is not None:
-            loss_fn.feat_loss.adapter.load_state_dict(checkpoint['adapter_state_dict'])
+        if loss_fn.feat_loss is not None and checkpoint.get('adapter_state_dict') is not None:
+            if use_multilayer:
+                loss_fn.feat_loss.adapters.load_state_dict(checkpoint['adapter_state_dict'])
+            else:
+                loss_fn.feat_loss.adapter.load_state_dict(checkpoint['adapter_state_dict'])
 
         best_epoch = checkpoint.get('epoch', -1) + 1
         best_wga = checkpoint.get('best_wga', 0) * 100

@@ -96,8 +96,93 @@ class FeatureDistillationLoss(nn.Module):
         
         # MSE loss (teacher is detached)
         loss = F.mse_loss(s_adapted, teacher_features.detach())
-        
+
         return loss
+
+
+# =============================================================================
+# MULTI-LAYER FEATURE DISTILLATION LOSS
+# =============================================================================
+
+class MultiLayerFeatureDistillationLoss(nn.Module):
+    """
+    Multi-layer feature distillation with per-layer gamma weights.
+
+    L_feat = Σ_l γ_l * MSE(adapt_l(student_l), teacher_l)
+
+    Supports layers: layer2, layer3, layer4, pooled
+
+    Args:
+        layer_gammas: Dict of {layer_name: gamma} for each layer to distill
+        student_arch: Student architecture ('resnet18')
+        teacher_arch: Teacher architecture ('resnet50')
+    """
+
+    # Feature dimensions by architecture and layer
+    DIMS = {
+        'resnet18': {'layer1': 64, 'layer2': 128, 'layer3': 256, 'layer4': 512, 'pooled': 512},
+        'resnet50': {'layer1': 256, 'layer2': 512, 'layer3': 1024, 'layer4': 2048, 'pooled': 2048},
+    }
+
+    def __init__(self, layer_gammas, student_arch='resnet18', teacher_arch='resnet50'):
+        super().__init__()
+
+        self.adapters = nn.ModuleDict()
+        self.gammas = {}
+
+        student_dims = self.DIMS[student_arch]
+        teacher_dims = self.DIMS[teacher_arch]
+
+        for layer, gamma in layer_gammas.items():
+            if gamma > 0:
+                student_dim = student_dims[layer]
+                teacher_dim = teacher_dims[layer]
+                spatial = (layer != 'pooled')
+
+                if spatial:
+                    self.adapters[layer] = nn.Conv2d(
+                        student_dim, teacher_dim,
+                        kernel_size=1, bias=False
+                    )
+                else:
+                    self.adapters[layer] = nn.Linear(
+                        student_dim, teacher_dim, bias=False
+                    )
+                self.gammas[layer] = gamma
+
+        # Store total gamma for compatibility
+        self.total_gamma = sum(self.gammas.values())
+
+    def forward(self, student_features, teacher_features):
+        """
+        Compute multi-layer feature distillation loss.
+
+        Args:
+            student_features: Dict {layer_name: tensor} from student
+            teacher_features: Dict {layer_name: tensor} from teacher
+
+        Returns:
+            total_loss: Combined multi-layer feature loss
+            losses: Dict with per-layer losses for logging
+        """
+        total_loss = 0.0
+        losses = {}
+
+        for layer, gamma in self.gammas.items():
+            s_feat = self.adapters[layer](student_features[layer])
+            t_feat = teacher_features[layer].detach()
+
+            # Handle spatial size mismatch (shouldn't happen for same-family ResNets)
+            if s_feat.dim() == 4 and s_feat.shape[-2:] != t_feat.shape[-2:]:
+                s_feat = F.adaptive_avg_pool2d(s_feat, t_feat.shape[-2:])
+
+            layer_loss = F.mse_loss(s_feat, t_feat)
+            losses[f'feat_{layer}'] = layer_loss.item()
+            total_loss += gamma * layer_loss
+
+        losses['feat_total'] = total_loss.item() if isinstance(total_loss, torch.Tensor) else total_loss
+
+        return total_loss, losses
 
 
 # =============================================================================
@@ -284,29 +369,47 @@ class AGREKDLoss(nn.Module):
 
     Args:
         alpha: Weight for KD vs CE (1.0 = pure KD, 0.0 = pure CE)
-        gamma: Weight for feature distillation loss
+        gamma: Weight for single-layer feature distillation (backward compatible)
+        layer_gammas: Dict of {layer_name: gamma} for multi-layer distillation
+                      If provided, overrides 'gamma' parameter
         temperature: Temperature for KD loss
-        student_dim: Student feature dimension (for adapter)
-        teacher_dim: Teacher feature dimension
+        student_dim: Student feature dimension (for single-layer adapter)
+        teacher_dim: Teacher feature dimension (for single-layer adapter)
+        student_arch: Student architecture for multi-layer ('resnet18')
+        teacher_arch: Teacher architecture for multi-layer ('resnet50')
     """
 
-    def __init__(self, alpha=1.0, gamma=0.0, temperature=4.0,
-                 student_dim=512, teacher_dim=2048):
+    def __init__(self, alpha=1.0, gamma=0.0, layer_gammas=None, temperature=4.0,
+                 student_dim=512, teacher_dim=2048,
+                 student_arch='resnet18', teacher_arch='resnet50'):
         super().__init__()
         self.alpha = alpha
-        self.gamma = gamma
         self.temperature = temperature
 
         self.ce_loss = nn.CrossEntropyLoss()
 
-        if gamma > 0:
+        # Multi-layer feature distillation
+        if layer_gammas is not None and any(g > 0 for g in layer_gammas.values()):
+            self.feat_loss = MultiLayerFeatureDistillationLoss(
+                layer_gammas=layer_gammas,
+                student_arch=student_arch,
+                teacher_arch=teacher_arch
+            )
+            self.gamma = self.feat_loss.total_gamma
+            self.use_multilayer = True
+        # Single-layer feature distillation (backward compatible)
+        elif gamma > 0:
             self.feat_loss = FeatureDistillationLoss(
                 student_dim=student_dim,
                 teacher_dim=teacher_dim,
                 spatial=False
             )
+            self.gamma = gamma
+            self.use_multilayer = False
         else:
             self.feat_loss = None
+            self.gamma = 0.0
+            self.use_multilayer = False
 
     def compute_kd_loss(self, student_logits, teacher_logits):
         """Compute KD loss between student and single teacher."""
@@ -422,18 +525,42 @@ class AGREKDLoss(nn.Module):
         total_loss += self.alpha * kd_loss
 
         # Feature distillation (weighted average of teacher features)
-        if self.gamma > 0 and teacher_features_list is not None:
-            # Stack teacher features: [num_teachers, B, D]
-            stacked = torch.stack(teacher_features_list, dim=0)
+        if self.gamma > 0 and self.feat_loss is not None and teacher_features_list is not None:
+            if self.use_multilayer:
+                # Multi-layer: features are dicts {layer_name: tensor}
+                # Average teacher features per layer
+                avg_teacher_features = {}
+                layers = self.feat_loss.gammas.keys()
 
-            # Weighted average: [B, D]
-            # Reshape weights for broadcasting: [num_teachers, 1, 1]
-            w = teacher_weights.view(-1, 1, 1)
-            avg_teacher_feat = (stacked * w).sum(dim=0)
+                for layer in layers:
+                    # Stack this layer's features from all teachers
+                    layer_feats = [t_feat[layer] for t_feat in teacher_features_list]
+                    stacked = torch.stack(layer_feats, dim=0)
 
-            feat = self.feat_loss(student_features, avg_teacher_feat)
-            losses['feat'] = feat.item()
-            total_loss += self.gamma * feat
+                    # Weighted average
+                    if stacked.dim() == 5:  # [T, B, C, H, W] for spatial
+                        w = teacher_weights.view(-1, 1, 1, 1, 1)
+                    else:  # [T, B, D] for pooled
+                        w = teacher_weights.view(-1, 1, 1)
+                    avg_teacher_features[layer] = (stacked * w).sum(dim=0)
+
+                # Compute multi-layer loss
+                feat_loss, feat_losses = self.feat_loss(student_features, avg_teacher_features)
+                losses.update(feat_losses)
+                total_loss += feat_loss
+
+            else:
+                # Single-layer: features are tensors [B, D]
+                # Stack teacher features: [num_teachers, B, D]
+                stacked = torch.stack(teacher_features_list, dim=0)
+
+                # Weighted average: [B, D]
+                w = teacher_weights.view(-1, 1, 1)
+                avg_teacher_feat = (stacked * w).sum(dim=0)
+
+                feat = self.feat_loss(student_features, avg_teacher_feat)
+                losses['feat'] = feat.item()
+                total_loss += self.gamma * feat
 
         losses['total'] = total_loss.item()
         losses['weights'] = teacher_weights.cpu().tolist()  # For logging
