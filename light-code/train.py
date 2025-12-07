@@ -212,13 +212,14 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
         biased_model.eval()
 
     # Loss function - use AGREKDLoss (works for both AGRE and AVER via weights)
+    # Must move to device for feature distillation adapter (when gamma > 0)
     loss_fn = AGREKDLoss(
         alpha=config.alpha,
         gamma=config.gamma,
         temperature=config.temperature,
         student_dim=512 if config.student_arch == 'resnet18' else 2048,
         teacher_dim=2048 if config.teacher_arch == 'resnet50' else 512,
-    )
+    ).to(device)
 
     # Optimizer (include adapter params if present)
     params = list(student.parameters())
