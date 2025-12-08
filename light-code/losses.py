@@ -101,6 +101,69 @@ class FeatureDistillationLoss(nn.Module):
 
 
 # =============================================================================
+# DISAGREEMENT-WEIGHTED FEATURE DISTILLATION LOSS
+# =============================================================================
+
+class DisagreementWeightedFeatureLoss(nn.Module):
+    """
+    Feature distillation that weights dimensions by teacher agreement.
+
+    High agreement (low variance across teachers) = high weight.
+    High disagreement (high variance) = low weight.
+
+    Rationale: Teachers trained with different seeds may learn different
+    spurious features. Where they agree → likely robust features.
+    Where they disagree → likely spurious features.
+
+    Args:
+        student_dim: Student feature dimension
+        teacher_dim: Teacher feature dimension
+        eps: Small constant for numerical stability
+    """
+
+    def __init__(self, student_dim=512, teacher_dim=2048, eps=1e-6):
+        super().__init__()
+        if student_dim != teacher_dim:
+            self.adapter = nn.Linear(student_dim, teacher_dim, bias=False)
+        else:
+            self.adapter = nn.Identity()
+        self.eps = eps
+
+    def forward(self, student_features, teacher_features_list):
+        """
+        Compute disagreement-weighted feature distillation loss.
+
+        Args:
+            student_features: Student pooled features [B, D_s]
+            teacher_features_list: List of teacher features, each [B, D_t]
+
+        Returns:
+            loss: Scalar weighted MSE loss
+        """
+        # Adapt student to teacher dimension
+        s_feat = self.adapter(student_features)  # [B, D_t]
+
+        # Stack teachers: [T, B, D]
+        stacked = torch.stack(teacher_features_list, dim=0)
+
+        # Compute mean and variance across teachers
+        avg_teacher = stacked.mean(dim=0)  # [B, D]
+        variance = stacked.var(dim=0)  # [B, D]
+
+        # Confidence weights: inverse variance (high agreement = high weight)
+        confidence = 1.0 / (variance + self.eps)  # [B, D]
+
+        # Normalize per sample to mean=1 (so total loss magnitude is similar)
+        confidence = confidence / confidence.mean(dim=-1, keepdim=True)
+
+        # Weighted MSE loss
+        diff = s_feat - avg_teacher.detach()
+        loss = (confidence.detach() * diff.pow(2)).mean()
+
+        return loss
+
+
+# =============================================================================
 # MULTI-LAYER FEATURE DISTILLATION LOSS
 # =============================================================================
 
@@ -377,14 +440,18 @@ class AGREKDLoss(nn.Module):
         teacher_dim: Teacher feature dimension (for single-layer adapter)
         student_arch: Student architecture for multi-layer ('resnet18')
         teacher_arch: Teacher architecture for multi-layer ('resnet50')
+        use_disagreement_weighting: If True, weight feature dimensions by teacher
+                                    agreement (high agreement = high weight)
     """
 
     def __init__(self, alpha=1.0, gamma=0.0, layer_gammas=None, temperature=4.0,
                  student_dim=512, teacher_dim=2048,
-                 student_arch='resnet18', teacher_arch='resnet50'):
+                 student_arch='resnet18', teacher_arch='resnet50',
+                 use_disagreement_weighting=False):
         super().__init__()
         self.alpha = alpha
         self.temperature = temperature
+        self.use_disagreement_weighting = use_disagreement_weighting
 
         self.ce_loss = nn.CrossEntropyLoss()
 
@@ -397,13 +464,20 @@ class AGREKDLoss(nn.Module):
             )
             self.gamma = self.feat_loss.total_gamma
             self.use_multilayer = True
-        # Single-layer feature distillation (backward compatible)
+        # Single-layer feature distillation
         elif gamma > 0:
-            self.feat_loss = FeatureDistillationLoss(
-                student_dim=student_dim,
-                teacher_dim=teacher_dim,
-                spatial=False
-            )
+            # Use disagreement-weighted loss if enabled
+            if use_disagreement_weighting:
+                self.feat_loss = DisagreementWeightedFeatureLoss(
+                    student_dim=student_dim,
+                    teacher_dim=teacher_dim
+                )
+            else:
+                self.feat_loss = FeatureDistillationLoss(
+                    student_dim=student_dim,
+                    teacher_dim=teacher_dim,
+                    spatial=False
+                )
             self.gamma = gamma
             self.use_multilayer = False
         else:
@@ -549,8 +623,14 @@ class AGREKDLoss(nn.Module):
                 losses.update(feat_losses)
                 total_loss += feat_loss
 
+            elif self.use_disagreement_weighting:
+                # Disagreement weighting: pass full list for variance computation
+                feat = self.feat_loss(student_features, teacher_features_list)
+                losses['feat'] = feat.item()
+                total_loss += self.gamma * feat
+
             else:
-                # Single-layer: features are tensors [B, D]
+                # Standard single-layer: weighted average of teacher features
                 # Stack teacher features: [num_teachers, B, D]
                 stacked = torch.stack(teacher_features_list, dim=0)
 

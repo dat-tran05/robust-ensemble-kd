@@ -161,7 +161,8 @@ def train_teacher(config, checkpoint_path=None):
 # =============================================================================
 
 def train_student(config, teachers, biased_model=None, exp_name='baseline',
-                  use_agre=True, checkpoint_path=None, layer_gammas=None):
+                  use_agre=True, checkpoint_path=None, layer_gammas=None,
+                  use_disagreement_weighting=False):
     """
     Train a student model via knowledge distillation from teacher ensemble.
 
@@ -178,6 +179,8 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
         layer_gammas: Optional dict {layer_name: gamma} for multi-layer distillation.
                       If provided, overrides config.gamma. Example:
                       {'layer3': 0.15, 'layer4': 0.35} for total gamma = 0.5
+        use_disagreement_weighting: If True, weight feature dimensions by teacher
+                                    agreement (high agreement = high weight)
 
     Returns:
         student: Trained student model
@@ -191,10 +194,12 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
     use_multilayer = layer_gammas is not None and any(g > 0 for g in layer_gammas.values())
     effective_gamma = sum(layer_gammas.values()) if use_multilayer else config.gamma
 
+    # Logging
+    disagree_str = ", disagree_weight=True" if use_disagreement_weighting else ""
     if use_multilayer:
-        print(f"\nTraining student: {exp_name} (α={config.alpha}, layer_gammas={layer_gammas}, method={method})")
+        print(f"\nTraining student: {exp_name} (α={config.alpha}, layer_gammas={layer_gammas}, method={method}{disagree_str})")
     else:
-        print(f"\nTraining student: {exp_name} (α={config.alpha}, γ={config.gamma}, method={method})")
+        print(f"\nTraining student: {exp_name} (α={config.alpha}, γ={config.gamma}, method={method}{disagree_str})")
 
     # Use first teacher as biased model if not specified
     if biased_model is None and use_agre:
@@ -235,6 +240,7 @@ def train_student(config, teachers, biased_model=None, exp_name='baseline',
         teacher_dim=2048 if config.teacher_arch == 'resnet50' else 512,
         student_arch=config.student_arch,
         teacher_arch=config.teacher_arch,
+        use_disagreement_weighting=use_disagreement_weighting,
     ).to(device)
 
     # Optimizer (include feature adapter params from loss function if using feature distillation)
