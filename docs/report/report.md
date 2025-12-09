@@ -52,7 +52,7 @@ $$
 
 Teachers whose gradients oppose the biased model get upweighted; those that align get downweighted.
 
-**[Figure: AGRE-KD gradient weighting illustration showing how teachers aligned with the biased direction are downweighted (thinner lines) while those that deviate are upweighted (bolder lines). Adapted from Kenfack et al. (2025).]**
+![AGRE-KD gradient weighting illustration showing how teachers aligned with the biased direction are downweighted while those that deviate are upweighted. Adapted from Kenfack et al. (2025).](../blog/images/weighting.png)
 
 AGRE-KD uses teachers debiased via **Deep Feature Reweighting (DFR)** (Kirichenko et al., 2022). DFR makes a critical observation: even biased models learn core features—spurious correlations are primarily amplified in the final classifier layer. By simply retraining the last layer on balanced data, DFR achieves strong WGA without modifying the backbone.
 
@@ -68,7 +68,7 @@ $$
 
 where $\mathcal{L}_{feat} = \|f_s - \bar{f}_T\|_2^2$ matches student features to the averaged teacher features.
 
-**[Figure: Our extended AGRE-KD architecture. We add a feature distillation branch that extracts penultimate layer features from teachers, averages them, and matches them to student features through a learned projection layer (2048→512 dim). The total loss combines weighted KD loss and feature MSE loss.]**
+![Our extended AGRE-KD architecture. We add a feature distillation branch that extracts penultimate layer features from teachers, averages them, and matches them to student features through a learned projection layer (2048→512 dim). The total loss combines weighted KD loss and feature MSE loss.](../blog/images/architecture.png)
 
 We explore several design choices within this framework:
 
@@ -228,12 +228,12 @@ All five teachers share the same ImageNet-pretrained ResNet-50 backbone. DFR onl
 
 ### Summary of Findings
 
-| Experiment | Finding |
-| --- | --- |
-| Feature distillation (γ > 0) | Modest improvement (+0.95% WGA) with reduced variance |
-| Disagreement weighting | No benefit—teachers share the same backbone, so feature disagreement is minimal |
-| Multi-layer distillation | Hurts performance—earlier layers encode spurious low-level features |
-| Class labels (α < 1) | Hurts performance—confirms AGRE-KD appendix finding that pure KD is best |
+| Experiment                    | Finding                                                                          |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| Feature distillation (γ > 0) | Modest improvement (+0.95% WGA) with reduced variance                            |
+| Disagreement weighting        | No benefit—teachers share the same backbone, so feature disagreement is minimal |
+| Multi-layer distillation      | Hurts performance—earlier layers encode spurious low-level features             |
+| Class labels (α < 1)         | Hurts performance—confirms AGRE-KD appendix finding that pure KD is best        |
 
 ### Practical Recommendations
 
