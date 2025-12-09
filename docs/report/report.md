@@ -83,6 +83,17 @@ We explore several design choices within this framework:
 - **Multi-layer distillation**: Following FitNets' approach of using intermediate "hints," we test whether distilling from multiple backbone layers (layer3, layer4) captures richer information than the penultimate layer alone.
 - **Class label supervision (α < 1)**: The AGRE-KD authors show in their appendix that pure KD (α=1) outperforms mixed supervision—we confirm this finding in our setting.
 
+Our design choices reflect a basic tension in feature distillation for group-robust KD. Feature-based methods like FitNets show that intermediate representations can transfer richer information than logits, but their value under spurious correlations depends on what teachers actually encode. Kirichenko et al. demonstrate that ERM models typically learn both core and spurious features, and that poor worst-group accuracy largely stems from how the final classifier weights these features rather than from missing core information. Under teachers debiased only via last-layer retraining (DFR), feature distillation therefore mainly encourages the student to match the inherited backbone, while robustness is driven primarily by how the final classifier recombines these features.
+
+Given this theoretical uncertainty, we systematically explore whether feature distillation can provide any additional debiasing signal beyond logits, even when teachers are DFR-debiased. The feature loss weight (γ) parameter allows us to quantify the marginal benefit of feature distillation: if features contain useful information beyond logits, we should see improvement as γ increases from zero. However, if DFR's limitation holds—that backbone features remain biased—we expect diminishing or even negative returns at high γ values, as the student would be forced to learn biased representations.
+
+We test disagreement weighting on features to determine whether teacher ensemble diversity provides useful signal at the representation level, analogous to AGRE-KD's gradient-based logit weighting. If teachers exhibit meaningful feature disagreement, weighting by variance could help the student focus on robust, consensus features while downweighting dimensions where teachers disagree (potentially indicating spurious correlations). Multi-layer distillation explores whether earlier backbone layers encode different information than the penultimate layer—specifically, whether distilling from multiple stages can help the student learn a more robust feature hierarchy, or conversely, whether earlier layers are too contaminated with spurious low-level features to be useful.
+
+Finallt, we study partial label supervision (α<1) to examine how ground-truth labels interact with feature distillation. When both feature loss and labels are present, they can provide competing signals: features align the student’s representations with the teacher, while labels provide direct task supervision. This lets us test whether labels regularize feature learning or instead interfere, given that AGRE-KD’s gradient weighting already emphasizes minority-group samples. Understanding this interaction is key for choosing the right balance between feature distillation, logit distillation, and direct supervision, and for probing how much feature distillation can contribute to group-robust ensemble KD.
+
+
+
+
 ---
 
 ## Method
