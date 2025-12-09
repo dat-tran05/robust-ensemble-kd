@@ -6,15 +6,13 @@
 
 ## Introduction
 
-Knowledge distillation from teacher ensembles typically improves model performance—but it can amplify bias. Even when individual teachers are debiased, the distilled student can learn stronger spurious correlations than any single teacher, a phenomenon called **bias amplification** (Kenfack et al., 2025).
+Neural networks can learn spurious correlations in the data, often leading to performance degradation for underrepresented subgroups. Studies have demonstrated that this disparity is amplified when knowledge is distilled from a complex teacher model to a simpler student model (Lukasik et al., 2023; Lee & Lee, 2023; Wang et al., 2023). Deep ensemble models can enhance both generalization and worst-case group performance (Ganaie et al., 2022; Ko et al., 2023; Kenfack et al., 2021), but evaluating multiple models at test time is computationally expensive, making them impractical for edge deployment. Ensemble knowledge distillation addresses this by distilling multiple teachers into a single student (You et al., 2017; Radwan et al., 2024).
 
-**AGRE-KD** addresses this through gradient-based teacher weighting: rather than equally averaging predictions, it downweights teachers whose gradients align with a biased reference model. This achieves state-of-the-art worst-group accuracy (WGA) on spurious correlation benchmarks like Waterbirds—where models must correctly classify minority examples like waterbirds photographed on land backgrounds instead of their typical water backgrounds.
+A natural approach is to average teacher predictions, but this can degrade worst-group accuracy: the consensus favors directions that minimize average error, not worst-case error. **AGRE-KD** (Kenfack et al., 2025) addresses this through gradient-based teacher weighting: rather than equally averaging predictions, it downweights teachers whose gradients align with a biased reference model. This achieves state-of-the-art worst-group accuracy on benchmarks like Waterbirds. However, AGRE-KD distills only teacher logits—the authors explicitly note that feature distillation remains an open direction for future work.
 
-However, AGRE-KD only distills teacher **logits** (final predictions). The authors explicitly note: *"We restrict ourselves to logit distillation and leave feature distillation for future exploration."*
+This work investigates that direction. We extend AGRE-KD with a feature distillation term and explore whether intermediate representations can provide additional debiasing signal beyond logits alone.
 
-This motivates our central question: **Can distilling intermediate feature representations, in addition to logits, further improve group robustness?**
-
-We extend AGRE-KD with a feature distillation term and systematically test three hypotheses about combining class labels, logits, and features. We find that feature distillation provides marginal improvement (+0.95% WGA) but is fundamentally limited by how teachers are debiased—a finding that explains why the AGRE-KD authors left this direction for future work.
+Our experiments show that feature distillation provides modest but consistent improvement with notably reduced variance across trials. We also find that these gains are constrained by how teachers are debiased—specifically, the debiasing method used affects only the classifier layer while leaving backbone features unchanged. This analysis clarifies when feature distillation helps and suggests that stronger gains may require debiasing methods that operate on the full network, not just the classifier.
 
 ---
 
@@ -30,7 +28,9 @@ Neural networks excel at finding patterns—sometimes the wrong ones. Given trai
 
 Knowledge distillation (Hinton et al., 2015) trains a student network to match the soft probability outputs of a teacher, transferring "dark knowledge" encoded in the teacher's uncertainty. The KL divergence loss with temperature τ is:
 
-$$\mathcal{L}_{KD} = \text{KL}(\sigma(z_s/\tau) \| \sigma(z_t/\tau))$$
+$$
+\mathcal{L}_{KD} = \text{KL}(\sigma(z_s/\tau) \| \sigma(z_t/\tau))
+$$
 
 Higher temperatures produce softer distributions, revealing more information about inter-class relationships.
 
@@ -46,7 +46,9 @@ AGRE-KD solves bias amplification by computing per-sample, per-teacher weights b
 
 The weighting formula is:
 
-$$W_t(x_i) = \text{ReLU}\left(1 - \cos(\nabla\ell_i^t, \nabla\ell_i^b)\right)$$
+$$
+W_t(x_i) = \text{ReLU}\left(1 - \cos(\nabla\ell_i^t, \nabla\ell_i^b)\right)
+$$
 
 Teachers whose gradients oppose the biased model get upweighted; those that align get downweighted.
 
@@ -60,17 +62,20 @@ However, this means **the backbone features remain biased**—only the classifie
 
 We investigate whether distilling features—not just logits—can transfer additional debiasing signal. Our full loss function is:
 
-$$\mathcal{L}_{total} = (1-\alpha)\mathcal{L}_{cls} + \alpha\mathcal{L}_{wKD} + \gamma\mathcal{L}_{feat}$$
+$$
+\mathcal{L}_{total} = (1-\alpha)\mathcal{L}_{cls} + \alpha\mathcal{L}_{wKD} + \gamma\mathcal{L}_{feat}
+$$
 
 where $\mathcal{L}_{feat} = \|f_s - \bar{f}_T\|_2^2$ matches student features to the averaged teacher features.
 
 **[Figure: Our extended AGRE-KD architecture. We add a feature distillation branch that extracts penultimate layer features from teachers, averages them, and matches them to student features through a learned projection layer (2048→512 dim). The total loss combines weighted KD loss and feature MSE loss.]**
 
-We test three hypotheses:
+We explore several design choices within this framework:
 
-- **H1**: Adding class label supervision (α < 1) improves WGA
-- **H2**: Feature distillation (γ > 0) improves WGA
-- **H3**: Combining both provides the best results
+- **Feature loss weight (γ)**: Does adding feature distillation improve WGA? What weight works best?
+- **Disagreement weighting**: Can we weight features by teacher disagreement, analogous to AGRE-KD's logit weighting?
+- **Multi-layer distillation**: Does distilling from multiple backbone layers capture richer information?
+- **Class label supervision (α < 1)**: The AGRE-KD authors show in their appendix that pure KD (α=1) outperforms mixed supervision—we confirm this in our setting.
 
 ---
 
@@ -80,13 +85,14 @@ We test three hypotheses:
 
 Our loss function combines three terms:
 
-| Term | Formula | Role |
-|------|---------|------|
-| $\mathcal{L}_{cls}$ | $\text{CE}(y, \hat{y}_s)$ | Cross-entropy with ground-truth labels |
-| $\mathcal{L}_{wKD}$ | $\text{KL}(\sigma(z_s/\tau) \| \sigma(\bar{z}_T/\tau))$ | KL divergence with weighted teacher logits |
-| $\mathcal{L}_{feat}$ | $\|f_s - \bar{f}_T\|_2^2$ | MSE between student and teacher features |
+| Term                   | Formula                                                   | Role                                       |
+| ---------------------- | --------------------------------------------------------- | ------------------------------------------ |
+| $\mathcal{L}_{cls}$  | $\text{CE}(y, \hat{y}_s)$                               | Cross-entropy with ground-truth labels     |
+| $\mathcal{L}_{wKD}$  | $\text{KL}(\sigma(z_s/\tau) \| \sigma(\bar{z}_T/\tau))$ | KL divergence with weighted teacher logits |
+| $\mathcal{L}_{feat}$ | $\|f_s - \bar{f}_T\|_2^2$                               | MSE between student and teacher features   |
 
 The hyperparameters control the balance:
+
 - **α ∈ [0,1]**: Weight on KD vs class labels. α=1 means pure KD (no ground-truth labels)
 - **γ ≥ 0**: Weight on feature distillation. γ=0 recovers standard AGRE-KD
 - **τ = 4.0**: Temperature for softening logits
@@ -95,7 +101,9 @@ The hyperparameters control the balance:
 
 For logit distillation, we use AGRE-KD's gradient-based weighting. For features, we average teacher features (with optional weighting):
 
-$$\bar{f}_T = \frac{1}{T}\sum_{t=1}^{T} f_t(x)$$
+$$
+\bar{f}_T = \frac{1}{T}\sum_{t=1}^{T} f_t(x)
+$$
 
 Since teacher ResNet-50 (2048-dim features) and student ResNet-18 (512-dim) have different dimensions, we learn a projection layer: $\mathcal{L}_{feat} = \|W_{proj} \cdot f_s - \bar{f}_T\|_2^2$
 
@@ -116,11 +124,11 @@ Since teacher ResNet-50 (2048-dim features) and student ResNet-18 (512-dim) have
 
 First, we verify that AGRE-KD's gradient weighting helps compared to simple teacher averaging (AVER).
 
-| Method | WGA | n |
-|--------|-----|---|
-| AGRE-KD Baseline | 84.62 ± 1.06% | 4 |
-| AVER Baseline | 83.95 ± 0.95% | 4 |
-| **Δ** | **+0.67%** | |
+| Method           | WGA              | n |
+| ---------------- | ---------------- | - |
+| AGRE-KD Baseline | 84.62 ± 1.06%   | 4 |
+| AVER Baseline    | 83.95 ± 0.95%   | 4 |
+| **Δ**     | **+0.67%** |   |
 
 **Finding**: AGRE-KD provides consistent improvement over simple averaging, validating the gradient-based weighting approach.
 
@@ -128,13 +136,13 @@ First, we verify that AGRE-KD's gradient weighting helps compared to simple teac
 
 Does adding feature distillation (γ > 0) improve WGA?
 
-| γ | WGA | Δ vs Baseline |
-|---|-----|---------------|
-| 0.00 (baseline) | 84.62 ± 1.06% | — |
-| 0.25 | 85.20 ± 0.97% | +0.58% |
-| **0.50** | **85.57 ± 0.36%** | **+0.95%** |
-| 0.75 | 84.89 ± 0.56% | +0.27% |
-| 1.00 | 85.10 ± 1.03% | +0.48% |
+| γ              | WGA                      | Δ vs Baseline   |
+| --------------- | ------------------------ | ---------------- |
+| 0.00 (baseline) | 84.62 ± 1.06%           | —               |
+| 0.25            | 85.20 ± 0.97%           | +0.58%           |
+| **0.50**  | **85.57 ± 0.36%** | **+0.95%** |
+| 0.75            | 84.89 ± 0.56%           | +0.27%           |
+| 1.00            | 85.10 ± 1.03%           | +0.48%           |
 
 **Finding**: Feature distillation provides **marginal improvement** (+0.95% at γ=0.5). Notably, γ=0.5 also has the lowest variance (±0.36% vs ±1.06%), suggesting more stable training.
 
@@ -142,12 +150,12 @@ Does adding feature distillation (γ > 0) improve WGA?
 
 Does adding ground-truth supervision help?
 
-| α | γ | WGA |
-|---|---|-----|
-| 1.0 | 0.25 | 85.20% |
+| α  | γ   | WGA            |
+| --- | ---- | -------------- |
+| 1.0 | 0.25 | 85.20%         |
 | 0.9 | 0.25 | 84.16 ± 1.01% |
-| 0.9 | 0.00 | 83.80% |
-| 0.7 | 0.00 | 82.55% |
+| 0.9 | 0.00 | 83.80%         |
+| 0.7 | 0.00 | 82.55%         |
 
 **Finding**: Class labels **hurt** performance. With high-quality teachers (91-94% WGA), the label signal interferes with gradient weighting rather than helping. Lower α consistently yields worse WGA.
 
@@ -155,10 +163,10 @@ Does adding ground-truth supervision help?
 
 Can we weight features by teacher disagreement, similar to AGRE-KD's logit weighting?
 
-| Method | WGA |
-|--------|-----|
-| Standard AGRE-KD + Features | 85.57% |
-| Disagree-Weight Features | 85.31 ± 0.39% |
+| Method                      | WGA            |
+| --------------------------- | -------------- |
+| Standard AGRE-KD + Features | 85.57%         |
+| Disagree-Weight Features    | 85.31 ± 0.39% |
 
 **Finding**: Disagree-weighting doesn't improve results. Teachers share the same backbone, so feature disagreement is minimal and uninformative.
 
@@ -166,24 +174,24 @@ Can we weight features by teacher disagreement, similar to AGRE-KD's logit weigh
 
 Does distilling from multiple layers capture richer information?
 
-| Layers | WGA |
-|--------|-----|
+| Layers             | WGA    |
+| ------------------ | ------ |
 | L4 only (standard) | 85.57% |
-| L3 + L4 | 85.20% |
-| L2 + L3 + L4 | 84.74% |
+| L3 + L4            | 85.20% |
+| L2 + L3 + L4       | 84.74% |
 
 **Finding**: More layers = **worse** performance. Earlier layers encode low-level features like textures and backgrounds—exactly the spurious correlations we want to avoid.
 
 ### Summary of Results
 
-| Rank | Method | α | γ | WGA (%) |
-|------|--------|---|---|---------|
-| 1 | AGRE-KD + Features | 1.0 | 0.50 | **85.57 ± 0.36** |
-| 2 | Disagree-Weight | 1.0 | 0.50 | 85.31 ± 0.39 |
-| 3 | AGRE-KD + Features | 1.0 | 0.25 | 85.20 ± 0.97 |
-| 10 | AGRE-KD Baseline | 1.0 | 0.00 | 84.62 ± 1.06 |
-| 13 | Combined (α=0.9) | 0.9 | 0.25 | 84.16 ± 1.01 |
-| 15 | AVER Baseline | 1.0 | 0.00 | 83.95 ± 0.95 |
+| Rank | Method             | α  | γ   | WGA (%)                 |
+| ---- | ------------------ | --- | ---- | ----------------------- |
+| 1    | AGRE-KD + Features | 1.0 | 0.50 | **85.57 ± 0.36** |
+| 2    | Disagree-Weight    | 1.0 | 0.50 | 85.31 ± 0.39           |
+| 3    | AGRE-KD + Features | 1.0 | 0.25 | 85.20 ± 0.97           |
+| 10   | AGRE-KD Baseline   | 1.0 | 0.00 | 84.62 ± 1.06           |
+| 13   | Combined (α=0.9)  | 0.9 | 0.25 | 84.16 ± 1.01           |
+| 15   | AVER Baseline      | 1.0 | 0.00 | 83.95 ± 0.95           |
 
 ---
 
@@ -218,17 +226,19 @@ All five teachers share the same ImageNet-pretrained ResNet-50 backbone. DFR onl
 
 ## Conclusion
 
-### Hypothesis Results
+### Summary of Findings
 
-| Hypothesis | Result | Evidence |
-|------------|--------|----------|
-| H1: Class labels help | **FALSE** | 84.16% vs 84.62% baseline |
-| H2: Feature distillation helps | **TRUE (marginal)** | 85.57% vs 84.62% (+0.95%) |
-| H3: Combined is best | **FALSE** | Combined performs worst |
+| Experiment | Finding |
+| --- | --- |
+| Feature distillation (γ > 0) | Modest improvement (+0.95% WGA) with reduced variance |
+| Disagreement weighting | No benefit—teachers share the same backbone, so feature disagreement is minimal |
+| Multi-layer distillation | Hurts performance—earlier layers encode spurious low-level features |
+| Class labels (α < 1) | Hurts performance—confirms AGRE-KD appendix finding that pure KD is best |
 
 ### Practical Recommendations
 
 For practitioners using AGRE-KD with DFR-debiased teachers:
+
 - **α = 1.0**: Pure KD, no class labels
 - **γ = 0.5**: Optimal feature weight (also lowest variance)
 - **Single layer**: Distill from penultimate layer only
@@ -246,6 +256,7 @@ This work provides empirical evidence for why the AGRE-KD authors left feature d
 ### Future Work
 
 Feature distillation might help more when:
+
 1. Teachers are trained with methods that debias the full backbone (not just classifier)
 2. Teachers have diverse architectures with genuinely different features
 3. Teachers are biased differently, creating meaningful feature disagreement
@@ -268,42 +279,42 @@ Feature distillation might help more when:
 
 ### A1: Full γ Sweep (AGRE-KD)
 
-| γ | WGA (%) | Variance | n |
-|---|---------|----------|---|
-| 0.00 | 84.62 ± 1.06 | High | 4 |
-| 0.05 | 83.96 | — | 1 |
-| 0.10 | 85.10 | — | 1 |
-| 0.25 | 85.20 ± 0.97 | Medium | 4 |
+| γ             | WGA (%)                 | Variance      | n |
+| -------------- | ----------------------- | ------------- | - |
+| 0.00           | 84.62 ± 1.06           | High          | 4 |
+| 0.05           | 83.96                   | —            | 1 |
+| 0.10           | 85.10                   | —            | 1 |
+| 0.25           | 85.20 ± 0.97           | Medium        | 4 |
 | **0.50** | **85.57 ± 0.36** | **Low** | 3 |
-| 0.75 | 84.89 ± 0.56 | Low | 3 |
-| 1.00 | 85.10 ± 1.03 | High | 3 |
+| 0.75           | 84.89 ± 0.56           | Low           | 3 |
+| 1.00           | 85.10 ± 1.03           | High          | 3 |
 
 ### A2: AGRE-KD vs AVER Across γ
 
-| γ | AGRE-KD | AVER | Δ |
-|---|---------|------|---|
-| 0.00 | 84.62% | 83.95% | +0.67% |
-| 0.25 | 85.20% | 84.42% | +0.78% |
-| 0.50 | 85.57% | 84.89% | +0.68% |
-| 1.00 | 85.10% | 84.27% | +0.83% |
+| γ   | AGRE-KD | AVER   | Δ     |
+| ---- | ------- | ------ | ------ |
+| 0.00 | 84.62%  | 83.95% | +0.67% |
+| 0.25 | 85.20%  | 84.42% | +0.78% |
+| 0.50 | 85.57%  | 84.89% | +0.68% |
+| 1.00 | 85.10%  | 84.27% | +0.83% |
 
 AGRE-KD advantage is consistent (~0.7%) across all γ values.
 
 ### A3: Combined (α < 1) Full Results
 
-| α | γ | WGA (%) | Notes |
-|---|---|---------|-------|
-| 1.0 | 0.00 | 84.62% | Baseline |
-| 0.9 | 0.00 | 83.80% | Labels hurt |
-| 0.9 | 0.25 | 84.16% | Combined worse than features alone |
-| 0.7 | 0.00 | 82.55% | More labels = worse |
-| 0.7 | 0.10 | 83.18% | Worst combined config |
+| α  | γ   | WGA (%) | Notes                              |
+| --- | ---- | ------- | ---------------------------------- |
+| 1.0 | 0.00 | 84.62%  | Baseline                           |
+| 0.9 | 0.00 | 83.80%  | Labels hurt                        |
+| 0.9 | 0.25 | 84.16%  | Combined worse than features alone |
+| 0.7 | 0.00 | 82.55%  | More labels = worse                |
+| 0.7 | 0.10 | 83.18%  | Worst combined config              |
 
 ### A4: Seed Variance
 
-| Config | Seed 42 | Seed 43 | Seed 44 | Std |
-|--------|---------|---------|---------|-----|
-| Baseline | 84.58% | 85.67% | 83.18% | ±1.06% |
-| γ=0.50 | 85.36% | 85.98% | 85.36% | ±0.36% |
+| Config   | Seed 42 | Seed 43 | Seed 44 | Std     |
+| -------- | ------- | ------- | ------- | ------- |
+| Baseline | 84.58%  | 85.67%  | 83.18%  | ±1.06% |
+| γ=0.50  | 85.36%  | 85.98%  | 85.36%  | ±0.36% |
 
 γ=0.5 produces more consistent results across random seeds.
