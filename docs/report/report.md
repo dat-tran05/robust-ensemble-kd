@@ -52,13 +52,17 @@ $$
 
 Teachers whose gradients oppose the biased model get upweighted; those that align get downweighted.
 
-![AGRE-KD gradient weighting illustration showing how teachers aligned with the biased direction are downweighted while those that deviate are upweighted. Adapted from Kenfack et al. (2025).](../blog/images/weighting.png)
+![AGRE-KD gradient weighting illustration showing how teachers aligned with the biased direction are downweighted while those that deviate are upweighted. Adapted from Kenfack et al. (2025).](../../blog/images/weighting.png)
 
 AGRE-KD uses teachers debiased via **Deep Feature Reweighting (DFR)** (Kirichenko et al., 2022). DFR makes a critical observation: even biased models learn core features—spurious correlations are primarily amplified in the final classifier layer. By simply retraining the last layer on balanced data, DFR achieves strong WGA without modifying the backbone.
 
 However, this means **the backbone features remain biased**—only the classifier is debiased. The AGRE-KD authors note: *"We restrict ourselves to logit distillation and leave feature distillation for future exploration."*
 
 ### Our Extension: Feature Distillation
+
+Knowledge distillation methods can be categorized into two main approaches: **logit distillation** and **feature distillation**. Logit distillation, introduced by Hinton et al. (2015), transfers knowledge through softened output probabilities—the "dark knowledge" encoded in inter-class relationships. Feature distillation, pioneered by FitNets (Romero et al., 2015), instead transfers knowledge from intermediate layers, allowing the student to mimic the teacher's internal representations, not just its outputs.
+
+While logit distillation is simpler and widely used, feature distillation can capture richer information by accessing the representations that lead to those outputs. FitNets demonstrated that a student guided by intermediate "hints" can outperform larger teachers while using 10× fewer parameters. However, feature distillation requires careful design choices: which layers to distill from, how to handle dimension mismatches between architectures, and whether multi-layer distillation provides additional benefit. Research suggests that distilling from a single well-chosen layer often suffices—additional layers can introduce noise or conflicting signals with diminishing returns (Heo et al., 2019).
 
 We investigate whether distilling features—not just logits—can transfer additional debiasing signal. Our full loss function is:
 
@@ -68,14 +72,16 @@ $$
 
 where $\mathcal{L}_{feat} = \|f_s - \bar{f}_T\|_2^2$ matches student features to the averaged teacher features.
 
-![Our extended AGRE-KD architecture. We add a feature distillation branch that extracts penultimate layer features from teachers, averages them, and matches them to student features through a learned projection layer (2048→512 dim). The total loss combines weighted KD loss and feature MSE loss.](../blog/images/architecture.png)
+Figure 2 illustrates our extended architecture. The student receives supervision from three sources: (1) weighted KL divergence loss from the teacher ensemble logits, (2) feature matching loss from the averaged teacher penultimate features via a learned projection layer, and (3) optionally, cross-entropy loss from ground-truth labels.
+
+![Our extended AGRE-KD architecture. We add a feature distillation branch that extracts penultimate layer features from teachers, averages them, and matches them to student features through a learned projection layer (2048→512 dim). The total loss combines weighted KD loss and feature MSE loss.](../../blog/images/architecture.png)
 
 We explore several design choices within this framework:
 
-- **Feature loss weight (γ)**: Does adding feature distillation improve WGA? What weight works best?
-- **Disagreement weighting**: Can we weight features by teacher disagreement, analogous to AGRE-KD's logit weighting?
-- **Multi-layer distillation**: Does distilling from multiple backbone layers capture richer information?
-- **Class label supervision (α < 1)**: The AGRE-KD authors show in their appendix that pure KD (α=1) outperforms mixed supervision—we confirm this in our setting.
+- **Feature loss weight (γ)**: We vary γ from 0 to 1 to determine the optimal balance between logit and feature distillation signals.
+- **Disagreement weighting**: Analogous to AGRE-KD's gradient-based logit weighting, we test whether weighting feature dimensions by teacher agreement (low variance = higher weight) improves robustness.
+- **Multi-layer distillation**: Following FitNets' approach of using intermediate "hints," we test whether distilling from multiple backbone layers (layer3, layer4) captures richer information than the penultimate layer alone.
+- **Class label supervision (α < 1)**: The AGRE-KD authors show in their appendix that pure KD (α=1) outperforms mixed supervision—we confirm this finding in our setting.
 
 ---
 
@@ -99,22 +105,50 @@ The hyperparameters control the balance:
 
 ### Teacher Weighting
 
-For logit distillation, we use AGRE-KD's gradient-based weighting. For features, we average teacher features (with optional weighting):
+**Logit Distillation**: For the KD loss component, we use AGRE-KD's gradient-based weighting. Each teacher receives a per-sample weight based on how much its gradient direction opposes the biased model:
 
 $$
-\bar{f}_T = \frac{1}{T}\sum_{t=1}^{T} f_t(x)
+W_t(x_i) = \text{ReLU}\left(1 - \cos(\nabla\ell_i^t, \nabla\ell_i^b)\right)
 $$
 
-Since teacher ResNet-50 (2048-dim features) and student ResNet-18 (512-dim) have different dimensions, we learn a projection layer: $\mathcal{L}_{feat} = \|W_{proj} \cdot f_s - \bar{f}_T\|_2^2$
+Teachers whose gradients align with the biased model are downweighted; those that diverge are upweighted. The weighted ensemble logits are then used to compute the KL divergence loss.
+
+**Feature Distillation**: For feature matching, we extract representations from the penultimate layer (after the final convolutional block, before the classifier). We compute a weighted average of teacher features using the same AGRE-KD weights:
+
+$$
+\bar{f}_T = \sum_{t=1}^{T} W_t(x) \cdot f_t(x)
+$$
+
+**Dimension Adaptation**: Since teacher (ResNet-50) and student (ResNet-18) have different feature dimensions (2048 vs 512), we learn a linear projection layer that maps student features to the teacher dimension space:
+
+$$
+\mathcal{L}_{feat} = \|W_{proj} \cdot f_s - \bar{f}_T\|_2^2
+$$
+
+where $W_{proj} \in \mathbb{R}^{2048 \times 512}$ is learned jointly with the student during training. This projection allows the student to learn a mapping from its representation space to the shared teacher representation space.
 
 ### Experimental Setup
 
-- **Dataset**: Waterbirds (Sagawa et al., 2020) — 4,795 training images, 4 groups
-- **Teachers**: 5 ResNet-50 models, DFR-debiased (91-94% WGA each)
-- **Student**: ResNet-18, ImageNet pretrained
-- **Biased model**: ResNet-50 trained with standard ERM (~73.8% WGA)
-- **Training**: 30 epochs, SGD with lr=0.001, batch size 128
-- **Seeds**: 42, 43, 44 for statistical significance
+**Dataset**: We evaluate on Waterbirds (Sagawa et al., 2020), a benchmark for spurious correlation robustness. The dataset contains 4,795 training images of birds with 4 groups defined by bird type (waterbird/landbird) and background (water/land). The spurious correlation arises because waterbirds predominantly appear on water backgrounds in training, causing models to rely on background rather than bird features.
+
+**Teacher Preparation**: We train 5 teacher ensembles following the AGRE-KD pipeline:
+
+1. **Base training**: Each ResNet-50 starts from ImageNet-pretrained weights and is fine-tuned on Waterbirds using standard ERM (Empirical Risk Minimization) for 30 epochs
+2. **DFR debiasing**: We apply Deep Feature Reweighting (Kirichenko et al., 2022) to each teacher. DFR freezes the backbone and retrains only the final classifier layer on a balanced subset of the validation data. This corrects the classifier's reliance on spurious features while preserving the learned representations
+3. **Ensemble diversity**: Each teacher is trained with a different random seed, producing slight variations in learned features despite sharing the same architecture
+
+The resulting teachers achieve 91-94% WGA individually, compared to ~73.8% for undebiased ERM models.
+
+**Biased Reference Model**: A single ResNet-50 trained with standard ERM (no debiasing) serves as the reference for computing AGRE-KD weights. Its gradient direction indicates the "biased" direction with spurious correlations that teachers should oppose.
+
+**Student Training**:
+
+- **Architecture**: ResNet-18 (ImageNet-pretrained)
+- **Optimizer**: SGD with learning rate 0.001, momentum 0.9
+- **Training**: 30 epochs, batch size 128
+- **Seeds**: We run each configuration with seeds 42, 43, 44 to measure variance
+
+**Evaluation**: We report Worst-Group Accuracy (WGA)—the accuracy on the worst-performing of the 4 groups—as our primary metric.
 
 ---
 
@@ -173,6 +207,8 @@ Can we weight features by teacher disagreement, similar to AGRE-KD's logit weigh
 ### Experiment 5: Multi-Layer Distillation
 
 Does distilling from multiple layers capture richer information?
+
+Unlike our standard approach which uses pooled features (after global average pooling), multi-layer distillation extracts spatial feature maps directly from intermediate backbone stages (layer2, layer3, layer4). These spatial representations retain height and width dimensions, requiring 1×1 Conv2d adapters instead of linear projections to map student channels to teacher channels.
 
 | Layers             | WGA    |
 | ------------------ | ------ |
@@ -272,6 +308,10 @@ Feature distillation might help more when:
 [3] Hinton, G., et al. "Distilling the Knowledge in a Neural Network." NIPS Workshop, 2015.
 
 [4] Sagawa, S., et al. "Distributionally Robust Neural Networks for Group Shifts." ICLR, 2020.
+
+[5] Romero, A., et al. "FitNets: Hints for Thin Deep Nets." ICLR, 2015.
+
+[6] Heo, B., et al. "A Comprehensive Overhaul of Feature Distillation." ICCV, 2019.
 
 ---
 
