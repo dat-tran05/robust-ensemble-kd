@@ -116,13 +116,13 @@ $$
 \bar{f}_T = \sum_{t=1}^{T} \frac{W_t(x)}{\sum_{t'} W_{t'}} \cdot f_t(x)
 $$
 
-**Dimension Adaptation:** Since teacher (ResNet-50) and student (ResNet-18) have different feature dimensions (2048 vs 512), we learn a linear projection layer that maps student features to the teacher dimension space:
+**Dimension Adaptation:** Since teacher (ResNet-50) and student (ResNet-18) have different feature dimensions (2048 vs 512), we learn a linear projection layer (no bias term) that maps student features to the teacher dimension space:
 
 $$
 \mathcal{L}_{feat} = \|W_{proj} \cdot f_s - \bar{f}_T\|_2^2
 $$
 
-where $W_{proj} \in \mathbb{R}^{2048 \times 512}$ is learned jointly with the student during training.
+where $W_{proj} \in \mathbb{R}^{2048 \times 512}$ is a learned linear transformation applied to the student's global-average-pooled penultimate features $f_s \in \mathbb{R}^{512}$, and $\bar{f}_T \in \mathbb{R}^{2048}$ is the weighted average of teachers' pooled penultimate features. The projection is learned jointly with the student during training.
 
 ### Feature Distillation Extension
 
@@ -157,7 +157,7 @@ The resulting teachers achieve 91-94% WGA individually, compared to ~73.8% for u
 - **Training**: 30 epochs, batch size 128
 - **Seeds**: We run each configuration with seeds 42, 43, 44 to measure variance
 
-**Evaluation**: We report Worst-Group Accuracy (WGA)—the accuracy on the worst-performing of the 4 groups—as our primary metric.
+**Evaluation**: We report Worst-Group Accuracy (WGA)—the accuracy on the worst-performing of the 4 groups—as our primary metric. Each configuration is run 3 times (with seeds 42, 43, 44), and we report the mean WGA across these runs along with the standard deviation to quantify variance.
 
 ---
 
