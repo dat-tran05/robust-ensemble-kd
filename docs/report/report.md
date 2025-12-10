@@ -160,11 +160,11 @@ The resulting teachers achieve 91-94% WGA individually, compared to ~73.8% for u
 
 **Results.**
 
-| Method           | WGA              | n |
-| ---------------- | ---------------- | - |
-| AGRE-KD Baseline | 84.62 ± 1.06%   | 4 |
-| AVER Baseline    | 83.95 ± 0.95%   | 4 |
-| **Δ**     | **+0.67%** |   |
+| Method           | WGA (%)         | Avg Acc (%)      | n |
+| ---------------- | --------------- | ---------------- | - |
+| AGRE-KD Baseline | 84.62 ± 1.06   | 92.07 ± 0.66    | 4 |
+| AVER Baseline    | 83.95 ± 0.95   | 92.48 ± 0.51    | 4 |
+| **Δ**            | **+0.67%**     | **-0.41%**      |   |
 
 **Analysis.** AGRE-KD provides consistent improvement over simple averaging (+0.67%), validating the gradient-based weighting approach. This advantage persists across all γ values (~0.7% improvement), as we show in the Single-Layer Feature Distillation analysis below, confirming that gradient weighting is orthogonal to feature distillation.
 
@@ -176,15 +176,15 @@ The resulting teachers achieve 91-94% WGA individually, compared to ~73.8% for u
 
 **Results.**
 
-| γ              | WGA (%)                 | Variance      | Δ vs Baseline   | n |
-| --------------- | ----------------------- | ------------- | ---------------- | - |
-| 0.00 (baseline) | 84.62 ± 1.06           | High          | —               | 4 |
-| 0.05            | 83.96                   | —            | -0.66%           | 1 |
-| 0.10            | 85.10                   | —            | +0.48%           | 1 |
-| 0.25            | 85.20 ± 0.97           | Medium        | +0.58%           | 4 |
-| **0.50**  | **85.57 ± 0.36** | **Low** | **+0.95%** | 3 |
-| 0.75            | 84.89 ± 0.56           | Low           | +0.27%           | 3 |
-| 1.00            | 85.10 ± 1.03           | High          | +0.48%           | 3 |
+| γ              | WGA (%)                 | Avg Acc (%)      | Δ vs Baseline   | n |
+| --------------- | ----------------------- | ---------------- | ---------------- | - |
+| 0.00 (baseline) | 84.62 ± 1.06           | 92.07 ± 0.66    | —               | 4 |
+| 0.05            | 83.96                   | 92.35            | -0.66%           | 1 |
+| 0.10            | 85.10                   | 90.94            | +0.48%           | 1 |
+| 0.25            | 85.20 ± 0.97           | 92.52 ± 0.32    | +0.58%           | 4 |
+| **0.50**        | **85.57 ± 0.36**       | 92.31 ± 0.97    | **+0.95%**       | 3 |
+| 0.75            | 84.89 ± 0.56           | 92.21 ± 0.66    | +0.27%           | 3 |
+| 1.00            | 85.10 ± 1.03           | 92.52 ± 0.90    | +0.48%           | 3 |
 
 ![Figure 4: Effect of feature distillation weight (γ) on worst-group accuracy. The optimal value γ=0.5 achieves +0.95% improvement over baseline with the lowest variance across seeds. Hatched bars indicate single-run experiments (n=1).](../../blog/images/gamma_sweep.png)
 
@@ -192,12 +192,12 @@ The resulting teachers achieve 91-94% WGA individually, compared to ~73.8% for u
 
 Importantly, this feature distillation benefit is orthogonal to the gradient-based teacher weighting. AGRE-KD maintains a consistent ~0.7% advantage over simple averaging (AVER) across all γ values tested:
 
-| γ   | AGRE-KD | AVER   | Δ     |
-| ---- | ------- | ------ | ------ |
-| 0.00 | 84.62%  | 83.95% | +0.67% |
-| 0.25 | 85.20%  | 84.42% | +0.78% |
-| 0.50 | 85.57%  | 84.89% | +0.68% |
-| 1.00 | 85.10%  | 84.27% | +0.83% |
+| γ   | AGRE-KD WGA | AVER WGA | Δ WGA  | AGRE-KD Avg | AVER Avg |
+| ---- | ----------- | -------- | ------ | ----------- | -------- |
+| 0.00 | 84.62%      | 83.95%   | +0.67% | 92.07%      | 92.48%   |
+| 0.25 | 85.20%      | 84.42%   | +0.78% | 92.52%      | 92.23%   |
+| 0.50 | 85.57%      | 84.89%   | +0.68% | 92.31%      | 92.66%   |
+| 1.00 | 85.10%      | 84.27%   | +0.83% | 92.52%      | 92.82%   |
 
 This consistency confirms that the two mechanisms, gradient-based weighting and feature distillation, provide complementary benefits: AGRE-KD improves teacher selection per-sample, while feature distillation provides additional regularization that stabilizes training.
 
@@ -217,14 +217,14 @@ Each is tested with and without feature distillation (γ=0 or γ>0).
 
 **Results.**
 
-| α  | γ   | Loss Terms Used        | WGA (%)       |
-| --- | ---- | ---------------------- | ------------- |
-| 1.0 | 0.25 | KD + Features          | 85.20         |
-| 1.0 | 0.00 | KD only (baseline)     | 84.62         |
-| 0.9 | 0.25 | Labels + KD + Features | 84.16 ± 1.01 |
-| 0.9 | 0.00 | Labels + KD            | 83.80         |
-| 0.7 | 0.10 | Labels + KD + Features | 83.18         |
-| 0.7 | 0.00 | Labels + KD            | 82.55         |
+| α  | γ   | Loss Terms Used        | WGA (%)       | Avg Acc (%)   | n |
+| --- | ---- | ---------------------- | ------------- | ------------- | - |
+| 1.0 | 0.25 | KD + Features          | 85.20 ± 0.97 | 92.52 ± 0.32 | 4 |
+| 1.0 | 0.00 | KD only (baseline)     | 84.62 ± 1.06 | 92.07 ± 0.66 | 4 |
+| 0.9 | 0.25 | Labels + KD + Features | 84.16 ± 1.01 | 92.42 ± 0.07 | 3 |
+| 0.9 | 0.00 | Labels + KD            | 83.80         | 93.01         | 1 |
+| 0.7 | 0.10 | Labels + KD + Features | 83.18         | 92.72         | 1 |
+| 0.7 | 0.00 | Labels + KD            | 82.55         | 92.34         | 1 |
 
 **Analysis.** Adding ground-truth labels consistently hurts performance, regardless of whether feature distillation is used. This confirms the AGRE-KD appendix finding in our extended setting. The best results come from α=1.0 (pure teacher supervision) combined with feature distillation.
 
@@ -244,10 +244,10 @@ $$
 
 **Results.**
 
-| Method                      | WGA (%)       |
-| --------------------------- | ------------- |
-| Standard AGRE-KD + Features | 85.57         |
-| Disagree-Weight Features    | 85.31 ± 0.39 |
+| Method                      | WGA (%)       | Avg Acc (%)   |
+| --------------------------- | ------------- | ------------- |
+| Standard AGRE-KD + Features | 85.57 ± 0.36 | 92.31 ± 0.97 |
+| Disagree-Weight Features    | 85.31 ± 0.39 | 92.18 ± 0.75 |
 
 **Analysis.** Disagreement weighting provides no improvement. In fact, it slightly underperforms standard feature distillation. The reason lies in how teachers are constructed: all five teachers share the same ImageNet-pretrained ResNet-50 backbone. DFR only retrains the final classifier layer differently for each teacher, so their penultimate features are nearly identical. There is simply not enough feature disagreement across teachers to exploit.
 
@@ -269,11 +269,11 @@ Layer weights are distributed to sum to γ=0.5 (the optimal single-layer value).
 
 **Results.**
 
-| Layers             | WGA (%) | Δ vs L4 only |
-| ------------------ | ------- | ------------- |
-| L4 only (standard) | 85.57   | —            |
-| L3 + L4            | 85.20   | -0.37%        |
-| L2 + L3 + L4       | 84.74   | -0.83%        |
+| Layers             | WGA (%)       | Avg Acc (%)   | Δ vs L4 only |
+| ------------------ | ------------- | ------------- | ------------- |
+| L4 only (standard) | 85.57 ± 0.36 | 92.31 ± 0.97 | —            |
+| L3 + L4            | 85.20         | 92.56         | -0.37%        |
+| L2 + L3 + L4       | 84.74         | 92.20         | -0.83%        |
 
 **Analysis.** More layers leads to worse performance, the opposite of what multi-layer distillation typically achieves. The degradation increases with earlier layers: adding L3 costs 0.37%, adding L2 costs another 0.46%.
 
@@ -285,14 +285,17 @@ This finding reinforces that for group-robust distillation, the penultimate laye
 
 ### Summary of Results
 
+Table 1 consolidates our main findings. Feature distillation with AGRE-KD achieves the best worst-group accuracy (85.57%) with the lowest variance, confirming that gradient-based weighting and feature matching provide complementary benefits.
+
 | Method                       | Best γ | WGA (%)                 | Avg Acc (%)   | n |
 | ---------------------------- | ------- | ----------------------- | ------------- | - |
-| **AGRE-KD + Features** | 0.50    | **85.57 ± 0.36** | 91.82 ± 0.47 | 3 |
-| Disagree-Weight              | 0.50    | 85.31 ± 0.39           | 91.65 ± 0.52 | 3 |
-| AGRE-KD Baseline             | 0.00    | 84.62 ± 1.06           | 91.42 ± 0.68 | 4 |
-| AVER + Features              | 0.50    | 84.89 ± 0.56           | 92.15 ± 0.41 | 3 |
-| AVER Baseline                | 0.00    | 83.95 ± 0.95           | 92.79 ± 0.53 | 4 |
-| Combined (α<1)              | 0.25    | 84.16 ± 1.01           | 92.34 ± 0.62 | 3 |
+| **AGRE-KD + Features**       | 0.50    | **85.57 ± 0.36**       | 92.31 ± 0.97 | 3 |
+| Disagree-Weight              | 0.50    | 85.31 ± 0.39           | 92.18 ± 0.75 | 3 |
+| Multi-Layer                  | 0.50    | 85.20                   | 92.56         | 1 |
+| AVER + Features              | 0.50    | 84.89                   | 92.66         | 1 |
+| AGRE-KD Baseline             | 0.00    | 84.62 ± 1.06           | 92.07 ± 0.66 | 4 |
+| Combined (α<1)               | 0.25    | 84.16 ± 1.01           | 92.42 ± 0.07 | 3 |
+| AVER Baseline                | 0.00    | 83.95 ± 0.95           | 92.48 ± 0.51 | 4 |
 
 ![Figure 5: Summary of results by method. Best result (AGRE-KD + Features) highlighted in green; baseline methods highlighted in blue.](../../blog/images/results_table_consolidated.png)
 
@@ -312,17 +315,7 @@ Recent extensions to DFR, such as all-layer deep feature reweighting (LaBonte et
 
 ### Limitations
 
-Our experimental setup differs from the original AGRE-KD paper in several ways that likely contribute to our lower baseline performance (84.62% vs. 87.9% WGA).
-
-**Ensemble size.** We used 5 teachers rather than the paper's 10. The AGRE-KD appendix demonstrates that worst-group accuracy scales substantially with ensemble size, from approximately 82% with 5 teachers to 88% with 10 teachers, and up to 90% with 50 teachers. Our smaller ensemble likely explains a significant portion of the performance gap, as fewer teachers provide less diversity for the gradient-based weighting to exploit.
-
-**Training duration.** Our students trained for 30 epochs compared to 100 epochs in the original work. This shorter training schedule, necessitated by our project timeline of approximately two weeks, may have resulted in students that had not fully converged. The feature distillation gains we observe might be larger with longer training that allows the projection layer to fully optimize.
-
-**Dataset scope.** We evaluated exclusively on Waterbirds, a binary classification task with a single spurious correlation (bird type vs. background). The effectiveness of feature distillation may differ on datasets with more complex spurious structures, such as CelebA (multiple attributes) or MultiNLI (language-based shortcuts).
-
-**Compute constraints.** This was a course project with limited computational resources. We prioritized experimental breadth, testing multiple hypotheses about feature distillation, over extensive hyperparameter tuning or larger-scale ablations.
-
-**Batch-level gradient weighting.** Our AGRE-KD implementation computes teacher weights at the batch level rather than per-sample. While the original paper's notation $W_t(x_i)$ suggests per-sample weighting, computing individual gradients for each sample would require $O(\text{batch\_size} \times \text{num\_teachers})$ backward passes per training step. Our batch-level approach computes one weight per teacher per batch, reducing this to $O(\text{num\_teachers})$ backward passes while still capturing the gradient alignment signal. This is a common practical approximation in gradient-based methods.
+Our experimental setup differs from the original AGRE-KD paper in several ways that likely contribute to our lower baseline (84.62% vs. 87.9% WGA). We used 5 teachers instead of 10, trained for 30 epochs instead of 100, and computed gradient weights at the batch level rather than per-sample due to computational constraints. Additionally, we evaluated only on Waterbirds, a binary task with a single spurious correlation; results may differ on datasets with more complex spurious structures like CelebA or MultiNLI. Given more time, we could have explored larger ensembles, longer training schedules, and additional datasets to strengthen our findings.
 
 ---
 
