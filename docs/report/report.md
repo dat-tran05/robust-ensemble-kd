@@ -297,7 +297,7 @@ The reason is specific to our debiasing context: earlier layers in a CNN encode 
 
 Interestingly, recent work on intermediate-layer matching suggests that layer-selection strategy has minimal impact on standard KD performance—even unconventional matching strategies produce comparable results (arXiv:2502.04499). However, our results show this does *not* hold in the group-robustness setting, where layer choice critically affects whether spurious or semantic features are transferred.
 
-This finding reinforces that for group-robust distillation, the penultimate layer is optimal—it contains the highest-level semantic features while avoiding the low-level spurious patterns encoded earlier in the network.
+This finding reinforces that for group-robust distillation, the penultimate layer is optimal; it contains the highest-level semantic features while avoiding the low-level spurious patterns encoded earlier in the network.
 
 ### Summary of Results
 
@@ -322,15 +322,7 @@ The central finding across our experiments is that feature distillation provides
 
 ![Figure 6: The DFR limitation. DFR retrains only the final classifier layer on balanced data, leaving the entire backbone unchanged from biased ERM training. When we distill features from layer4, we transfer biased representations.](../../blog/images/dfr.png)
 
-DFR retrains **only the final classifier layer**. The entire backbone (layers 1-4) remains unchanged from standard biased training. When we distill features from layer4, we're distilling **biased features**—the "debiasing" only exists in how the classifier combines these features, not in the features themselves.
-
-This explains several of our experimental findings:
-
-- **Multi-layer distillation hurts**: Earlier layers are even more biased, encoding low-level spurious correlations like background texture
-- **Disagreement weighting doesn't help**: All teachers share the same backbone, so their features are nearly identical despite different classifiers
-- **Feature gains are modest**: The debiasing signal comes from logits, not features
-
-This limitation is consistent with recent findings that standard KD objectives may introduce competing optimization pressures that undermine debiasing efforts. Work on the "distillability" of bias mitigation methods shows that students often become *more* biased than their teachers after distillation, even when teachers are debiased (arXiv:2510.26038). Our modest gains (+0.95%) align with this—feature distillation alone cannot overcome the fundamental bias in backbone features.
+DFR retrains **only the final classifier layer** while keeping the backbone (layers 1–4) frozen from biased training, so distilling from layer4 still transfers biased representations and only the classifier is “debiasing.” This matches recent work showing that standard KD objectives can conflict with debiasing and that students may even become more biased than debiased teachers after distillation. These observations clarify why multi-layer distillation hurts (earlier layers encode stronger spurious cues like background), why disagreement weighting adds little (all teachers share nearly identical backbones), and why feature gains stay modest because most debiasing signal lives in the logits, not the features.
 
 Recent extensions to DFR, such as all-layer deep feature reweighting (LaBonte et al., 2024), achieve better results by reweighting features from multiple layers rather than just the classifier. This suggests that combining AGRE-KD with backbone-level debiasing could unlock larger gains from feature distillation.
 
@@ -346,7 +338,7 @@ Our experimental setup differs from the original AGRE-KD paper in several ways t
 
 **Compute constraints.** This was a course project with limited computational resources. We prioritized experimental breadth—testing multiple hypotheses about feature distillation—over extensive hyperparameter tuning or larger-scale ablations.
 
-**Batch-level gradient weighting.** Our AGRE-KD implementation computes teacher weights at the batch level rather than per-sample. While the original paper's notation $W_t(x_i)$ suggests per-sample weighting, computing individual gradients for each sample would require $O(\text{batch\_size} \times \text{num\_teachers})$ backward passes per training step—prohibitively expensive for practical training. Our batch-level approach computes one weight per teacher per batch, reducing this to $O(\text{num\_teachers})$ backward passes while still capturing the gradient alignment signal. This is a common practical approximation in gradient-based methods.
+**Batch-level gradient weighting.** Our AGRE-KD implementation computes teacher weights at the batch level rather than per-sample. While the original paper's notation $W_t(x_i)$ suggests per-sample weighting, computing individual gradients for each sample would require $O(\text{batch\_size} \times \text{num\_teachers})$ backward passes per training step. Our batch-level approach computes one weight per teacher per batch, reducing this to $O(\text{num\_teachers})$ backward passes while still capturing the gradient alignment signal. This is a common practical approximation in gradient-based methods.
 
 ---
 
