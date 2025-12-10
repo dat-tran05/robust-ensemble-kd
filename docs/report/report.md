@@ -172,7 +172,7 @@ The resulting teachers achieve 91-94% WGA individually, compared to ~73.8% for u
 
 **Motivation.** As discussed in Method, we distill features from the penultimate layer (after global average pooling, before the classifier) as it contains the highest-level semantic representations. This layer is also where the feature dimension mismatch occurs (ResNet-50: 2048-dim → ResNet-18: 512-dim), requiring a learned projection.
 
-**Setup.** We fix α=1.0 (pure KD, no ground-truth labels) and sweep γ ∈ {0, 0.05, 0.10, 0.25, 0.50, 0.75, 1.0} to find the optimal balance between logit and feature distillation signals. All experiments use penultimate layer (pooled) features only.
+**Setup.** We fix α=1.0 (pure KD, no ground-truth labels) and perform a hyperparameter sweep over γ ∈ {0, 0.05, 0.10, 0.25, 0.50, 0.75, 1.0} to find the optimal balance between logit and feature distillation signals. All experiments use penultimate layer (pooled) features only.
 
 **Results.**
 
@@ -190,22 +190,15 @@ The resulting teachers achieve 91-94% WGA individually, compared to ~73.8% for u
 
 **Analysis.** Feature distillation provides modest but consistent improvement, with γ=0.5 achieving the best WGA (+0.95% over baseline). Notably, γ=0.5 also exhibits the lowest variance across seeds (±0.36% vs ±1.06%), suggesting more stable training dynamics. Very low values (γ=0.05) can hurt performance, while very high values (γ=1.0) increase variance again. The optimal range appears to be γ ∈ [0.25, 0.75].
 
-Importantly, this feature distillation benefit is orthogonal to the gradient-based teacher weighting. AGRE-KD maintains a consistent ~0.7% advantage over simple averaging (AVER) across all γ values tested:
+Importantly, this feature distillation benefit is orthogonal to the gradient-based teacher weighting. As Figure 5 shows, AGRE-KD maintains a consistent ~0.7% advantage over simple averaging (AVER) across all γ values tested, confirming that the two mechanisms provide complementary benefits.
 
-| γ   | AGRE-KD WGA | AVER WGA | Δ WGA  | AGRE-KD Avg | AVER Avg |
-| ---- | ----------- | -------- | ------ | ----------- | -------- |
-| 0.00 | 84.62%      | 83.95%   | +0.67% | 92.07%      | 92.48%   |
-| 0.25 | 85.20%      | 84.42%   | +0.78% | 92.52%      | 92.23%   |
-| 0.50 | 85.57%      | 84.89%   | +0.68% | 92.31%      | 92.66%   |
-| 1.00 | 85.10%      | 84.27%   | +0.83% | 92.52%      | 92.82%   |
-
-This consistency confirms that the two mechanisms, gradient-based weighting and feature distillation, provide complementary benefits: AGRE-KD improves teacher selection per-sample, while feature distillation provides additional regularization that stabilizes training.
+![Figure 5: AGRE-KD vs AVER comparison across all γ values. Gradient-based weighting consistently improves WGA by ~0.7% regardless of feature distillation weight, showing the two mechanisms are orthogonal.](../../blog/images/agrekd_vs_aver.png)
 
 The improvement is limited. We analyze why in the Discussion section, attributing it to the DFR debiasing method which leaves backbone features unchanged.
 
 ### Three-Term Loss Analysis
 
-**Motivation.** Our loss function combines three supervision signals: cross-entropy with ground-truth labels ($\mathcal{L}_{cls}$), weighted KD loss ($\mathcal{L}_{wKD}$), and feature matching ($\mathcal{L}_{feat}$). While the AGRE-KD authors show in their appendix that pure KD (α=1) outperforms mixed supervision, we test whether adding feature distillation changes this dynamic. Perhaps the combination of all three terms could be synergistic.
+**Motivation.** Our loss function combines three supervision signals: cross-entropy with ground-truth labels ($\mathcal{L}_{cls}$), weighted KD loss ($\mathcal{L}_{wKD}$), and feature matching ($\mathcal{L}_{feat}$). While Kenfack et al. (2025) show that pure KD (α=1) outperforms mixed supervision, we test whether adding feature distillation changes this dynamic. Perhaps the combination of all three terms could be synergistic.
 
 **Setup.** We test a matrix of (α, γ) combinations to understand how the three loss terms interact:
 
@@ -226,9 +219,7 @@ Each is tested with and without feature distillation (γ=0 or γ>0).
 | 0.7 | 0.10 | Labels + KD + Features | 83.18         | 92.72         | 1 |
 | 0.7 | 0.00 | Labels + KD            | 82.55         | 92.34         | 1 |
 
-**Analysis.** Adding ground-truth labels consistently hurts performance, regardless of whether feature distillation is used. This confirms the AGRE-KD appendix finding in our extended setting. The best results come from α=1.0 (pure teacher supervision) combined with feature distillation.
-
-The reason is that cross-entropy loss treats all samples equally, while AGRE-KD's gradient weighting specifically upweights minority group samples. Adding uniform label supervision dilutes this adaptive weighting, reducing emphasis on the hard minority samples that AGRE-KD is designed to handle. Feature distillation cannot compensate for this interference.
+**Analysis.** Adding ground-truth labels consistently hurts performance, regardless of whether feature distillation is used. This confirms the finding from Kenfack et al. (2025) in our extended setting. The best results come from α=1.0 (pure teacher supervision) combined with feature distillation. Cross-entropy loss treats all samples equally, diluting AGRE-KD's adaptive weighting that emphasizes minority group samples.
 
 ### Disagreement-Weighted Features
 
@@ -277,11 +268,7 @@ Layer weights are distributed to sum to γ=0.5 (the optimal single-layer value).
 
 **Analysis.** More layers leads to worse performance, the opposite of what multi-layer distillation typically achieves. The degradation increases with earlier layers: adding L3 costs 0.37%, adding L2 costs another 0.46%.
 
-The reason is specific to our debiasing context: earlier layers in a CNN encode low-level features like textures, edges, and backgrounds. These are exactly the spurious correlations we want to avoid. Since teachers are trained with standard ERM before DFR, their early layers have learned to rely on background features. Distilling these layers transfers the spurious correlations to the student, counteracting the debiasing signal from the logits.
-
-Interestingly, recent work on intermediate-layer matching suggests that layer-selection strategy has minimal impact on standard KD performance. Even unconventional matching strategies produce comparable results (arXiv:2502.04499). However, our results show this does not hold in the group-robustness setting, where layer choice critically affects whether spurious or semantic features are transferred.
-
-This finding reinforces that for group-robust distillation, the penultimate layer is optimal; it contains the highest-level semantic features while avoiding the low-level spurious patterns encoded earlier in the network.
+The reason is specific to our debiasing context: earlier layers in a CNN encode low-level features like textures, edges, and backgrounds. These are exactly the spurious correlations we want to avoid. Since teachers are trained with standard ERM before DFR, their early layers have learned to rely on background features. Distilling these layers transfers the spurious correlations to the student, counteracting the debiasing signal from the logits. For group-robust distillation, the penultimate layer is optimal as it contains the highest-level semantic features while avoiding the low-level spurious patterns encoded earlier in the network.
 
 ### Summary of Results
 
