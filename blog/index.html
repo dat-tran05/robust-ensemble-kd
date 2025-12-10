@@ -2,6 +2,8 @@
 <head>
 
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
 <link rel="shortcut icon" href="images/icon.ico">
 <style type="text/css">
@@ -80,8 +82,16 @@
 	}
 
 	h1 {
-		font-size: 18px;
-		margin-top: 4px;
+		font-size: 24px;
+		font-weight: 600;
+		margin-top: 30px;
+		margin-bottom: 15px;
+	}
+
+	h2 {
+		font-size: 17px;
+		font-weight: 600;
+		margin-top: 25px;
 		margin-bottom: 10px;
 	}
 
@@ -145,6 +155,29 @@
 		height: 200px;
   }
 
+	table.results {
+		border-collapse: collapse;
+		width: 100%;
+		margin: 20px 0;
+		font-size: 14px;
+	}
+	table.results th, table.results td {
+		border: 1px solid #ddd;
+		padding: 8px 12px;
+		text-align: left;
+	}
+	table.results th {
+		background-color: #f5f9ff;
+		font-weight: 600;
+	}
+	table.results tr:nth-child(even) {
+		background-color: #fafafa;
+	}
+	table.results .highlight {
+		background-color: #e8f5e9;
+		font-weight: 600;
+	}
+
 	.fade-in-inline {
 		position: absolute;
 		text-align: center;
@@ -183,8 +216,8 @@
 
 </style>
 
-	  <title>The Platonic Representation Hypothesis</title>
-      <meta property="og:title" content="The Platonic Representation Hypothesis" />
+	  <title>Improving Group Robustness in Ensemble Knowledge Distillation</title>
+      <meta property="og:title" content="Improving Group Robustness in Ensemble Knowledge Distillation: Beyond Logit Matching" />
 			<meta charset="UTF-8">
   </head>
 
@@ -220,16 +253,19 @@
           <div style="position:fixed; max-width:inherit; top:max(20%,120px)">
               <b style="font-size:16px">Outline</b><br><br>
               <a href="#intro">Introduction</a><br><br>
-              <a href="#does_x_do_y">Does X do Y?</a><br><br>
-              <a href="#implications_and_limitations">Implications and limitations</a><br><br>
+              <a href="#background">Background &amp; Related Work</a><br><br>
+              <a href="#method">Method</a><br><br>
+              <a href="#experiments">Experiments &amp; Analysis</a><br><br>
+              <a href="#discussion">Discussion</a><br><br>
+              <a href="#conclusion">Conclusion</a><br><br>
+              <a href="#references">References</a><br><br>
           </div>
 				</div>
 		    <div class="main-content-block" style="padding-top: 0;">
-            <!--You can embed an image like this:-->
             <img src="./images/thumbnail.png" width="80%" style="margin-top: 0;"/>
 		    </div>
 		    <div class="margin-right-block">
-						Caption for the image.
+						Extending AGRE-KD with feature distillation for improved worst-group accuracy in ensemble knowledge distillation.
 		    </div>
 		</div>
 
@@ -238,48 +274,64 @@
 				</div>
 		    <div class="main-content-block">
 						<h1>Introduction</h1>
-            Motivate your project. What question are you asking. Why is it unanswered so far? What gap in the literature or practice are you filling?
-            Why is it important?
+            <p>Neural networks often learn spurious correlations, shortcuts that work on average but fail on minority subgroups. When models are compressed via knowledge distillation (KD), this problem gets worse: studies show the student model can become even more biased than its teacher (Lukasik et al., 2023; Lee & Lee, 2023). This bias amplification poses real problems for deployment scenarios where both efficiency and fairness matter.</p>
+
+            <p>Ensemble methods can improve worst-case group performance by combining diverse models, but deploying multiple networks is computationally expensive. <b>Ensemble knowledge distillation</b> addresses this by compressing multiple teachers into a single efficient student (Bucilă et al., 2006; Hinton et al., 2015). However, naive averaging of teacher predictions can amplify shared biases rather than cancel them.</p>
+
+            <p><b>AGRE-KD</b> (Kenfack et al., 2025) addresses this through gradient-based teacher weighting: rather than equally averaging predictions, it downweights teachers whose gradients align with a biased reference model. This achieves state-of-the-art worst-group accuracy on benchmarks like Waterbirds. However, AGRE-KD distills only teacher logits. The authors explicitly note that feature distillation remains an open direction for future work.</p>
+
+            <p>We investigate this direction. We hypothesize that extending AGRE-KD with feature distillation, matching intermediate representations between teachers and the student, can transfer additional debiasing signal beyond logits alone and further improve worst-group accuracy.</p>
+
+            <p>Our experiments show that feature distillation provides modest but consistent improvement (+0.95% worst-group accuracy) with notably reduced variance across trials (±0.36% vs ±1.06%). We also find that these gains are constrained by how teachers are debiased. Specifically, Deep Feature Reweighting (DFR) affects only the classifier layer while leaving backbone features unchanged. Our analysis shows when feature distillation helps and suggests that stronger gains may require debiasing methods that operate on the full network, not just the classifier.</p>
 		    </div>
 		    <div class="margin-right-block">
-						Margin note that clarifies some detail #main-content-block for intro section.
 		    </div>
 		</div>
 
-		<div class="content-margin-container" id="does_x_do_y">
+		<!-- Background & Related Work -->
+		<div class="content-margin-container" id="background">
 				<div class="margin-left-block">
 				</div>
 		    <div class="main-content-block">
-					<h1>Does X do Y?</h1>
-				  It is well known that Y does Y. And this has raised the question does X do Y? Because if Y does Y then it stands to reason that X does Y.
-          But we cannot answer this until we realize the Z implies Y and X can be linked to Z.<br><br>
+					<h1>Background & Related Work</h1>
 
-          Now let's write some math!<br>
-          <center>
-            <math xmlns="http://www.w3.org/1998/Math/MathML">
-              <mrow>
-                <mrow>
-                  <mo>&#x2202;</mo>
-                  <mi>y</mi>
-                </mrow>
-                <mo>/</mo>
-                <mrow>
-                  <mo>&#x2202;</mo>
-                  <mi>x</mi>
-                </mrow>
-              </mrow>
-              <mo>=</mo>
-              <mi>x</mi>
-            </math>
-          </center>
-          <br>
-          It's probably best to ask an LLM to help do the web
-          formatting for math. You can tell it "convert this latex equation into MathML: $$\frac{\partial dy}{\partial dx} = x$$"
-          But it took me a few tries. So, if you get frustrated, you can embed an image of the equation, or use other packages for
-          rendering equations on webpages.
+					<h2>Spurious Correlations & Worst-Group Accuracy</h2>
+					<p>Neural networks are effective at finding patterns, though sometimes the wrong ones. Given training data where waterbirds typically appear against water backgrounds and landbirds against land backgrounds, a model might learn "water background → waterbird" rather than actual bird features. This works on average but fails on <b>minority groups</b>: a waterbird photographed on land gets misclassified because the model relies on background rather than the bird itself (Sagawa et al., 2020).</p>
+
+					<p><b>Worst-Group Accuracy (WGA)</b> measures robustness against such failures. It is the accuracy on the worst-performing subgroup (e.g., waterbirds on land backgrounds) rather than the overall average. Maximizing WGA ensures models work for all groups, not just the easy majority.</p>
+
+					<h2>Knowledge Distillation</h2>
+					<p>Knowledge distillation (Hinton et al., 2015) trains a student network to match the soft probability outputs of a teacher, transferring "dark knowledge" encoded in the teacher's uncertainty. The KL divergence loss with temperature τ is:</p>
+
+					<p style="text-align: center;">
+						\[\mathcal{L}_{KD} = \text{KL}(\sigma(z_s/\tau) \| \sigma(z_t/\tau))\]
+					</p>
+
+					<p>Higher temperatures produce softer distributions, revealing more information about inter-class relationships.</p>
+
+					<h2>Ensemble Knowledge Distillation</h2>
+					<p>Ensemble distillation extends KD by aggregating predictions from multiple teachers into a single student (You et al., 2017). Several methods address how to best combine teacher knowledge: Fukuda et al. (2017) randomly select teachers during mini-batch training to capture complementary knowledge, Du et al. (2020) use multi-objective optimization in gradient space to handle conflicting teacher gradients, and Zhang et al. (2022) weight teachers by prediction confidence. However, these approaches primarily target average accuracy improvements rather than group robustness.</p>
+
+					<p>Deep ensembles naturally improve worst-group accuracy through model diversity (Ko et al., 2023), but whether these benefits transfer through distillation remained unclear until recently. Studies on bias in single-teacher KD revealed that teacher errors can amplify during distillation. Students may become even more biased than their teachers due to reduced model capacity (Lukasik et al., 2023; Hooker et al., 2020). This effect is exacerbated in ensemble settings: when teachers share similar biases, simple averaging of their outputs reinforces rather than cancels these biases.</p>
+
+					<h2>AGRE-KD: Gradient-Based Teacher Weighting</h2>
+					<p>AGRE-KD addresses bias amplification through gradient-based teacher weighting. The key intuition is that if a teacher's gradient points in the same direction as a biased model's gradient, that teacher is likely giving biased advice for this sample, so we should trust it less.</p>
+
+					<p>For each sample \(x_i\), AGRE-KD computes a per-teacher weight based on gradient alignment. Let \(\ell_i^t(\theta)\) denote the KD loss between the student (with parameters \(\theta\)) and teacher \(t\), and \(\ell_i^b(\theta)\) the KD loss with respect to a biased reference model. The sample-wise teacher weight is:</p>
+
+					<p style="text-align: center;">
+						\[W_t(x_i) = 1 - \langle \nabla\ell_i^t(\theta), \nabla\ell_i^b(\theta) \rangle\]
+					</p>
+
+					<p>where \(\langle \cdot, \cdot \rangle\) denotes the dot product of <b>normalized</b> gradient vectors (i.e., cosine similarity). This normalization is critical because gradient magnitudes can be noisy, so only the direction matters.</p>
+
+					<p><b>Interpretation:</b> When the dot product approaches +1 (gradients aligned), the teacher behaves like the biased model, so its weight approaches 0. When the dot product approaches −1 (gradients opposed), the teacher provides maximally debiasing signal, so its weight approaches 2. Teachers are then aggregated using these weights:</p>
+
+					<p style="text-align: center;">
+						\[\mathcal{L}_{wKD} = \frac{\sum_t W_t(x_i) \cdot \mathcal{L}_{KD}^t}{\sum_t W_t}\]
+					</p>
 		    </div>
-		    <div class="margin-right-block" style="transform: translate(0%, -100%);"> <!-- you can move the margin notes up and down with translate -->
-          Interestingly, Plato also asked if X does Y, in <a href="#ref_1">[1]</a>.
+		    <div class="margin-right-block">
 		    </div>
 		</div>
 
@@ -287,40 +339,528 @@
 				<div class="margin-left-block">
 				</div>
 		    <div class="main-content-block">
-            <h1>Another section</h1>
-            In this section we embed a video:
-						<video class='my-video' loop autoplay muted style="width: 725px">
-								<source src="./images/mtsh.mp4" type="video/mp4">
-						</video>
+					<img src="./images/weighting.png" width="70%"/>
+					<p style="font-size: 14px; color: #666;"><b>Figure 1:</b> AGRE-KD gradient weighting illustration showing how teachers aligned with the biased direction are downweighted while those that deviate are upweighted. Adapted from Kenfack et al. (2025).</p>
+
+					<p>AGRE-KD uses teachers debiased via <b>Deep Feature Reweighting (DFR)</b> (Kirichenko et al., 2022). DFR makes a critical observation: even biased models learn useful core features alongside spurious ones. The problem is primarily in the final classifier layer, which over-weights spurious correlations. By freezing the backbone and retraining only the last layer on balanced data, DFR achieves strong WGA with minimal compute. This "last layer retraining is sufficient" insight has been influential in the robustness literature.</p>
+
+					<p>However, this means <b>the backbone features remain biased</b>. Only the classifier is debiased. The AGRE-KD authors note: <i>"We restrict ourselves to logit distillation and leave feature distillation for future exploration."</i></p>
 		    </div>
 		    <div class="margin-right-block">
-					A caption for the video could go here.
+					Figure 1: Classic averaging yields a direction dominated by biased teachers, while adaptive weighting prioritizes the least biased models.
 		    </div>
 		</div>
 
-		<div class="content-margin-container" id="implications_and_limitations">
+		<!-- Method -->
+		<div class="content-margin-container" id="method">
 				<div class="margin-left-block">
 				</div>
 		    <div class="main-content-block">
-						<h1>Implications and limitations</h1>
-						Let's end with some discussion of the implications and limitations.
+					<h1>Method</h1>
+
+					<h2>Problem Formulation</h2>
+					<p>We extend AGRE-KD with a feature distillation term. Our full loss function combines three supervision signals:</p>
+
+					<p style="text-align: center;">
+						\[\mathcal{L}_{total} = (1-\alpha)\mathcal{L}_{cls} + \alpha\mathcal{L}_{wKD} + \gamma\mathcal{L}_{feat}\]
+					</p>
+
+					<p>The three terms are:</p>
+
+					<table class="results">
+						<tr>
+							<th>Term</th>
+							<th>Formula</th>
+							<th>Role</th>
+						</tr>
+						<tr>
+							<td>\(\mathcal{L}_{cls}\)</td>
+							<td>\(\text{CE}(y, \hat{y}_s)\)</td>
+							<td>Cross-entropy with ground-truth labels</td>
+						</tr>
+						<tr>
+							<td>\(\mathcal{L}_{wKD}\)</td>
+							<td>\(\text{KL}(\sigma(z_s/\tau) \| \sigma(\bar{z}_T/\tau))\)</td>
+							<td>KL divergence with weighted teacher logits</td>
+						</tr>
+						<tr>
+							<td>\(\mathcal{L}_{feat}\)</td>
+							<td>\(\|f_s - \bar{f}_T\|_2^2\)</td>
+							<td>MSE between student and teacher features</td>
+						</tr>
+					</table>
+
+					<p>The hyperparameters control the balance:</p>
+					<ul>
+						<li><b>α ∈ [0,1]</b>: Weight on KD vs class labels. α=1 means pure KD (no ground-truth labels)</li>
+						<li><b>γ ≥ 0</b>: Weight on feature distillation. γ=0 recovers standard AGRE-KD</li>
+						<li><b>τ = 4.0</b>: Temperature for softening logits</li>
+					</ul>
+
+					<h2>Teacher Weighting and Feature Extraction</h2>
+					<p>For the KD loss component, we use AGRE-KD's gradient-based weighting as described in Background. Teachers whose gradients align with the biased model are downweighted; those that diverge are upweighted.</p>
+
+					<p>For feature matching, we extract representations from the penultimate layer (after the final convolutional block, before the classifier). We compute a weighted average of teacher features using the same AGRE-KD weights:</p>
+
+					<p style="text-align: center;">
+						\[\bar{f}_T = \sum_{t=1}^{T} \frac{W_t(x)}{\sum_{t'} W_{t'}} \cdot f_t(x)\]
+					</p>
+
+					<p><b>Dimension Adaptation:</b> Since teacher (ResNet-50) and student (ResNet-18) have different feature dimensions (2048 vs 512), we learn a linear projection layer (no bias term) that maps student features to the teacher dimension space:</p>
+
+					<p style="text-align: center;">
+						\[\mathcal{L}_{feat} = \|W_{proj} \cdot f_s - \bar{f}_T\|_2^2\]
+					</p>
+
+					<p>where \(W_{proj} \in \mathbb{R}^{2048 \times 512}\) is a learned linear transformation applied to the student's global-average-pooled penultimate features \(f_s \in \mathbb{R}^{512}\), and \(\bar{f}_T \in \mathbb{R}^{2048}\) is the weighted average of teachers' pooled penultimate features.</p>
+
+					<h2>Motivation for Feature Distillation</h2>
+					<p>We investigate whether distilling features, not just logits, can transfer additional debiasing signal. Unlike logit distillation which only transfers output probabilities, feature distillation (Romero et al., 2015) allows the student to mimic the teacher's internal representations. Prior work shows that distilling from a single well-chosen layer often suffices, as additional layers can introduce noise or conflicting signals with diminishing returns (Heo et al., 2019).</p>
 		    </div>
 		    <div class="margin-right-block">
 		    </div>
 		</div>
 
-		<div class="content-margin-container" id="citations">
+		<div class="content-margin-container">
 				<div class="margin-left-block">
 				</div>
 		    <div class="main-content-block">
-						<div class='citation' id="references" style="height:auto"><br>
-							<span style="font-size:16px">References:</span><br><br>
-							<a id="ref_1"></a>[1] <a href="https://en.wikipedia.org/wiki/Allegory_of_the_cave">Allegory of the Cave</a>, Plato, c. 375 BC<br><br>
-							<a id="ref_2"></a>[2] <a href="">A Human-Level AGI</a>, OpenAI, 2025<br><br>
+					<img src="./images/architecture.png" width="100%"/>
+					<p style="font-size: 14px; color: #666;"><b>Figure 2:</b> Our extended AGRE-KD architecture. We add a feature distillation branch that extracts penultimate layer features from teachers, averages them, and matches them to student features through a learned projection layer (2048→512 dim). The total loss combines weighted KD loss and feature MSE loss.</p>
+
+					<h2>Experimental Setup</h2>
+					<p><b>Dataset:</b> We evaluate on Waterbirds (Sagawa et al., 2020), a benchmark for spurious correlation robustness. The dataset contains 4,795 training images of birds with 4 groups defined by bird type (waterbird/landbird) and background (water/land). The spurious correlation arises because waterbirds predominantly appear on water backgrounds in training, causing models to rely on background rather than bird features.</p>
+		    </div>
+		    <div class="margin-right-block">
+					Figure 2: The student receives supervision from three sources: weighted KD loss, feature matching loss, and optionally cross-entropy loss.
+		    </div>
+		</div>
+
+		<div class="content-margin-container">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+					<img src="./images/waterbirds_groups.png" width="70%"/>
+					<p style="font-size: 14px; color: #666;"><b>Figure 3:</b> Waterbirds dataset. The 4 groups defined by bird type and background. The minority group (waterbird on land, n=56) is the hardest to classify correctly because the model learns to associate water backgrounds with waterbirds.</p>
+
+					<p><b>Teacher Preparation:</b> We train 5 teacher ensembles following the AGRE-KD pipeline:</p>
+					<ol>
+						<li><b>Base training:</b> Each ResNet-50 starts from ImageNet-pretrained weights and is fine-tuned on Waterbirds using standard ERM for 30 epochs</li>
+						<li><b>DFR debiasing:</b> We apply Deep Feature Reweighting to each teacher. DFR freezes the backbone and retrains only the final classifier layer on a balanced subset of the validation data</li>
+						<li><b>Ensemble diversity:</b> Each teacher is trained with a different random seed, producing slight variations in learned features</li>
+					</ol>
+
+					<p>The resulting teachers achieve 91-94% WGA individually, compared to ~73.8% for undebiased ERM models.</p>
+
+					<p><b>Biased Reference Model:</b> A single ResNet-50 trained with standard ERM (no debiasing) serves as the reference for computing AGRE-KD weights.</p>
+
+					<p><b>Student Training:</b></p>
+					<ul>
+						<li><b>Architecture:</b> ResNet-18 (ImageNet-pretrained)</li>
+						<li><b>Optimizer:</b> SGD with learning rate 0.001, momentum 0.9</li>
+						<li><b>Training:</b> 30 epochs, batch size 128</li>
+						<li><b>Seeds:</b> We run each configuration with seeds 42, 43, 44 to measure variance</li>
+					</ul>
+
+					<p><b>Evaluation:</b> We report Worst-Group Accuracy (WGA), the accuracy on the worst-performing of the 4 groups, as our primary metric.</p>
+		    </div>
+		    <div class="margin-right-block">
+					Figure 3: The minority group (waterbird on land) contains only 56 training samples.
+		    </div>
+		</div>
+
+		<!-- Experiments & Analysis -->
+		<div class="content-margin-container" id="experiments">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+					<h1>Experiments & Analysis</h1>
+
+					<h2>Baseline Validation: AGRE-KD vs Simple Averaging</h2>
+					<p><b>Motivation.</b> Before evaluating our feature distillation extension, we first verify that AGRE-KD's gradient-based teacher weighting provides benefit over simple averaging.</p>
+
+					<p><b>Setup.</b> We compare two teacher aggregation strategies, both without feature distillation (γ=0):</p>
+					<ul>
+						<li><b>AGRE-KD:</b> Gradient-based per-sample teacher weighting</li>
+						<li><b>AVER:</b> Simple averaging of teacher predictions</li>
+					</ul>
+
+					<table class="results">
+						<tr>
+							<th>Method</th>
+							<th>WGA (%)</th>
+							<th>Avg Acc (%)</th>
+							<th>n</th>
+						</tr>
+						<tr>
+							<td>AGRE-KD Baseline</td>
+							<td>84.62 ± 1.06</td>
+							<td>92.07 ± 0.66</td>
+							<td>4</td>
+						</tr>
+						<tr>
+							<td>AVER Baseline</td>
+							<td>83.95 ± 0.95</td>
+							<td>92.48 ± 0.51</td>
+							<td>4</td>
+						</tr>
+						<tr class="highlight">
+							<td><b>Δ</b></td>
+							<td><b>+0.67%</b></td>
+							<td><b>-0.41%</b></td>
+							<td></td>
+						</tr>
+					</table>
+
+					<p><b>Analysis.</b> AGRE-KD provides consistent improvement over simple averaging (+0.67%), validating the gradient-based weighting approach. This advantage persists across all γ values (~0.7% improvement).</p>
+
+					<h2>Single-Layer Feature Distillation</h2>
+					<p><b>Motivation.</b> We distill features from the penultimate layer as it contains the highest-level semantic representations.</p>
+
+					<p><b>Setup.</b> We fix α=1.0 (pure KD, no ground-truth labels) and perform a hyperparameter sweep over γ ∈ {0, 0.05, 0.10, 0.25, 0.50, 0.75, 1.0}.</p>
+
+					<table class="results">
+						<tr>
+							<th>γ</th>
+							<th>WGA (%)</th>
+							<th>Avg Acc (%)</th>
+							<th>Δ vs Baseline</th>
+							<th>n</th>
+						</tr>
+						<tr>
+							<td>0.00 (baseline)</td>
+							<td>84.62 ± 1.06</td>
+							<td>92.07 ± 0.66</td>
+							<td>—</td>
+							<td>4</td>
+						</tr>
+						<tr>
+							<td>0.05</td>
+							<td>83.96</td>
+							<td>92.35</td>
+							<td>-0.66%</td>
+							<td>1</td>
+						</tr>
+						<tr>
+							<td>0.10</td>
+							<td>85.10</td>
+							<td>90.94</td>
+							<td>+0.48%</td>
+							<td>1</td>
+						</tr>
+						<tr>
+							<td>0.25</td>
+							<td>85.20 ± 0.97</td>
+							<td>92.52 ± 0.32</td>
+							<td>+0.58%</td>
+							<td>4</td>
+						</tr>
+						<tr class="highlight">
+							<td><b>0.50</b></td>
+							<td><b>85.57 ± 0.36</b></td>
+							<td>92.31 ± 0.97</td>
+							<td><b>+0.95%</b></td>
+							<td>3</td>
+						</tr>
+						<tr>
+							<td>0.75</td>
+							<td>84.89 ± 0.56</td>
+							<td>92.21 ± 0.66</td>
+							<td>+0.27%</td>
+							<td>3</td>
+						</tr>
+						<tr>
+							<td>1.00</td>
+							<td>85.10 ± 1.03</td>
+							<td>92.52 ± 0.90</td>
+							<td>+0.48%</td>
+							<td>3</td>
+						</tr>
+					</table>
+		    </div>
+		    <div class="margin-right-block">
+		    </div>
+		</div>
+
+		<div class="content-margin-container">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+					<img src="./images/gamma_sweep.png" width="70%"/>
+					<p style="font-size: 14px; color: #666;"><b>Figure 4:</b> Effect of feature distillation weight (γ) on worst-group accuracy. The optimal value γ=0.5 achieves +0.95% improvement over baseline with the lowest variance across seeds. Hatched bars indicate single-run experiments (n=1).</p>
+
+					<p><b>Analysis.</b> Feature distillation provides modest but consistent improvement, with γ=0.5 achieving the best WGA (+0.95% over baseline). Notably, γ=0.5 also exhibits the lowest variance across seeds (±0.36% vs ±1.06%), suggesting more stable training dynamics. The optimal range appears to be γ ∈ [0.25, 0.75].</p>
+		    </div>
+		    <div class="margin-right-block">
+					Figure 4: γ=0.5 achieves the best WGA with lowest variance.
+		    </div>
+		</div>
+
+		<div class="content-margin-container">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+					<img src="./images/agrekd_vs_aver.png" width="70%"/>
+					<p style="font-size: 14px; color: #666;"><b>Figure 5:</b> AGRE-KD vs AVER comparison across all γ values. Gradient-based weighting consistently improves WGA by ~0.7% regardless of feature distillation weight, showing the two mechanisms are orthogonal.</p>
+
+					<h2>Three-Term Loss Analysis</h2>
+					<p><b>Motivation.</b> Our loss function combines three supervision signals. We test whether adding ground-truth labels changes the dynamic.</p>
+
+					<table class="results">
+						<tr>
+							<th>α</th>
+							<th>γ</th>
+							<th>Loss Terms Used</th>
+							<th>WGA (%)</th>
+							<th>Avg Acc (%)</th>
+							<th>n</th>
+						</tr>
+						<tr class="highlight">
+							<td>1.0</td>
+							<td>0.25</td>
+							<td>KD + Features</td>
+							<td><b>85.20 ± 0.97</b></td>
+							<td>92.52 ± 0.32</td>
+							<td>4</td>
+						</tr>
+						<tr>
+							<td>1.0</td>
+							<td>0.00</td>
+							<td>KD only (baseline)</td>
+							<td>84.62 ± 1.06</td>
+							<td>92.07 ± 0.66</td>
+							<td>4</td>
+						</tr>
+						<tr>
+							<td>0.9</td>
+							<td>0.25</td>
+							<td>Labels + KD + Features</td>
+							<td>84.16 ± 1.01</td>
+							<td>92.42 ± 0.07</td>
+							<td>3</td>
+						</tr>
+						<tr>
+							<td>0.9</td>
+							<td>0.00</td>
+							<td>Labels + KD</td>
+							<td>83.80</td>
+							<td>93.01</td>
+							<td>1</td>
+						</tr>
+						<tr>
+							<td>0.7</td>
+							<td>0.10</td>
+							<td>Labels + KD + Features</td>
+							<td>83.18</td>
+							<td>92.72</td>
+							<td>1</td>
+						</tr>
+						<tr>
+							<td>0.7</td>
+							<td>0.00</td>
+							<td>Labels + KD</td>
+							<td>82.55</td>
+							<td>92.34</td>
+							<td>1</td>
+						</tr>
+					</table>
+
+					<p><b>Analysis.</b> Adding ground-truth labels consistently hurts performance, regardless of whether feature distillation is used. The best results come from α=1.0 (pure teacher supervision) combined with feature distillation. Cross-entropy loss treats all samples equally, diluting AGRE-KD's adaptive weighting.</p>
+
+					<h2>Disagreement-Weighted Features</h2>
+					<p><b>Motivation.</b> We test whether weighting feature dimensions by teacher agreement improves robustness. Dimensions where teachers agree (low variance) are more reliable signals.</p>
+
+					<p><b>Setup.</b> Features with low variance (high agreement) receive higher weight in the MSE loss:</p>
+
+					<p style="text-align: center;">
+						\[\mathcal{L}_{feat} = \sum_d w_d \cdot (f_s^{(d)} - \bar{f}_T^{(d)})^2, \quad w_d \propto \frac{1}{\text{Var}_t[f_t^{(d)}] + \epsilon}\]
+					</p>
+
+					<table class="results">
+						<tr>
+							<th>Method</th>
+							<th>WGA (%)</th>
+							<th>Avg Acc (%)</th>
+						</tr>
+						<tr class="highlight">
+							<td>Standard AGRE-KD + Features</td>
+							<td><b>85.57 ± 0.36</b></td>
+							<td>92.31 ± 0.97</td>
+						</tr>
+						<tr>
+							<td>Disagree-Weight Features</td>
+							<td>85.31 ± 0.39</td>
+							<td>92.18 ± 0.75</td>
+						</tr>
+					</table>
+
+					<p><b>Analysis.</b> Disagreement weighting provides no improvement. All five teachers share the same ImageNet-pretrained ResNet-50 backbone. DFR only retrains the final classifier layer differently for each teacher, so their penultimate features are nearly identical.</p>
+
+					<h2>Multi-Layer Feature Distillation</h2>
+					<p><b>Motivation.</b> Multi-layer distillation could potentially transfer a richer hierarchy of representations.</p>
+
+					<table class="results">
+						<tr>
+							<th>Layers</th>
+							<th>WGA (%)</th>
+							<th>Avg Acc (%)</th>
+							<th>Δ vs L4 only</th>
+						</tr>
+						<tr class="highlight">
+							<td>L4 only (standard)</td>
+							<td><b>85.57 ± 0.36</b></td>
+							<td>92.31 ± 0.97</td>
+							<td>—</td>
+						</tr>
+						<tr>
+							<td>L3 + L4</td>
+							<td>85.20</td>
+							<td>92.56</td>
+							<td>-0.37%</td>
+						</tr>
+						<tr>
+							<td>L2 + L3 + L4</td>
+							<td>84.74</td>
+							<td>92.20</td>
+							<td>-0.83%</td>
+						</tr>
+					</table>
+
+					<p><b>Analysis.</b> More layers leads to worse performance. Earlier layers encode low-level features like textures, edges, and backgrounds—exactly the spurious correlations we want to avoid. For group-robust distillation, the penultimate layer is optimal.</p>
+		    </div>
+		    <div class="margin-right-block">
+		    </div>
+		</div>
+
+		<div class="content-margin-container">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+					<h2>Summary of Results</h2>
+
+					<p>Figure 6 consolidates our main findings across all experimental configurations. Feature distillation with AGRE-KD achieves the best worst-group accuracy (85.57%) with the lowest variance, confirming that gradient-based weighting and feature matching provide complementary benefits.</p>
+
+					<img src="./images/results_table_consolidated.png" width="100%"/>
+					<p style="font-size: 14px; color: #666;"><b>Figure 6:</b> Summary of results by method. Best result (AGRE-KD + Features) highlighted in green; baseline methods highlighted in blue.</p>
+		    </div>
+		    <div class="margin-right-block">
+					Figure 6: Our best method (AGRE-KD + Features at γ=0.5) achieves +0.95% WGA improvement over baseline with 3x lower variance (±0.36% vs ±1.06%).
+		    </div>
+		</div>
+
+		<!-- Discussion -->
+		<div class="content-margin-container" id="discussion">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+					<h1>Discussion</h1>
+
+					<h2>The DFR Limitation</h2>
+					<p>The central finding across our experiments is that feature distillation provides only modest gains (+0.95%). This limitation stems directly from how Deep Feature Reweighting (DFR) works:</p>
+		    </div>
+		    <div class="margin-right-block">
+		    </div>
+		</div>
+
+		<div class="content-margin-container">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+					<img src="./images/dfr.png" width="90%"/>
+					<p style="font-size: 14px; color: #666;"><b>Figure 7:</b> The DFR limitation. DFR retrains only the final classifier layer on balanced data, leaving the entire backbone unchanged from biased ERM training. When we distill features from layer4, we transfer biased representations.</p>
+		    </div>
+		    <div class="margin-right-block">
+					Figure 7: DFR leaves backbone features biased; only the classifier is debiased.
+		    </div>
+		</div>
+
+		<div class="content-margin-container">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+					<p>DFR retrains <b>only the final classifier layer</b> while keeping the backbone (layers 1–4) frozen from biased training, so distilling from layer4 still transfers biased representations and only the classifier is "debiasing." This matches recent work showing that standard KD objectives can conflict with debiasing and that students may even become more biased than debiased teachers after distillation.</p>
+
+					<p>These observations clarify why:</p>
+					<ul>
+						<li><b>Multi-layer distillation hurts:</b> Earlier layers encode stronger spurious cues like background</li>
+						<li><b>Disagreement weighting adds little:</b> All teachers share nearly identical backbones</li>
+						<li><b>Feature gains stay modest:</b> Most debiasing signal lives in the logits, not the features</li>
+					</ul>
+
+					<p>Recent extensions to DFR, such as all-layer deep feature reweighting (LaBonte et al., 2024), achieve better results by reweighting features from multiple layers rather than just the classifier. This suggests that combining AGRE-KD with backbone-level debiasing could unlock larger gains from feature distillation.</p>
+
+					<h2>Limitations</h2>
+					<p>Our experimental setup differs from the original AGRE-KD paper in several ways that likely contribute to our lower baseline (84.62% vs. 87.9% WGA). We used 5 teachers instead of 10, trained for 30 epochs instead of 100, and computed gradient weights at the batch level rather than per-sample due to computational constraints. Additionally, we evaluated only on Waterbirds, a binary task with a single spurious correlation; results may differ on datasets with more complex spurious structures like CelebA or MultiNLI.</p>
+		    </div>
+		    <div class="margin-right-block">
+		    </div>
+		</div>
+
+		<!-- Conclusion -->
+		<div class="content-margin-container" id="conclusion">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+					<h1>Conclusion</h1>
+
+					<p>This work investigated whether feature distillation can improve group robustness in ensemble knowledge distillation, extending the AGRE-KD framework which the original authors explicitly left for future exploration. Our experiments on Waterbirds demonstrate that distilling penultimate-layer features provides modest but consistent improvement: a 0.95% gain in worst-group accuracy at the optimal weight (γ=0.5), while also notably reducing variance across training runs (±0.36% vs. ±1.06%).</p>
+
+					<p>The central insight from our analysis is that the limited gains stem from a fundamental property of Deep Feature Reweighting (DFR): it debiases only the classifier layer, leaving backbone features unchanged from biased ERM training. When we distill these features, we transfer representations that still encode spurious correlations.</p>
+
+					<p>These findings clarify the conditions under which feature distillation would be more effective for group-robust knowledge distillation. Several directions warrant future exploration:</p>
+
+					<ol>
+						<li><b>Backbone-level debiasing:</b> Methods like all-layer DFR (LaBonte et al., 2024) that modify backbone features, not just classifiers, could provide genuinely debiased features to distill.</li>
+						<li><b>Group-aware distillation losses:</b> Recent work on long-tailed KD suggests decomposing distillation by group and rebalancing explicitly. This approach could complement AGRE-KD's sample-wise weighting with group-level balancing.</li>
+						<li><b>Temperature tuning for fairness:</b> Research on distillation and fairness suggests that higher distillation temperatures can improve group fairness metrics. Students at T=5-10 can become fairer than their teachers.</li>
+						<li><b>Architecturally diverse ensembles:</b> Teachers with genuinely different backbones would provide diverse feature representations that disagreement-based weighting could exploit.</li>
+					</ol>
+
+					<p>With additional compute resources, extending this analysis to other spurious correlation benchmarks (CelebA, MultiNLI) and larger ensemble sizes would further validate these insights.</p>
+		    </div>
+		    <div class="margin-right-block">
+		    </div>
+		</div>
+
+		<!-- References -->
+		<div class="content-margin-container" id="references">
+				<div class="margin-left-block">
+				</div>
+		    <div class="main-content-block">
+						<div class='citation' style="height:auto"><br>
+							<span style="font-size:16px"><b>References</b></span><br><br>
+
+							<b>Foundational Knowledge Distillation</b><br><br>
+							[1] Bucilă et al. "Model Compression." KDD, 2006.<br><br>
+							[2] Hinton et al. "Distilling the Knowledge in a Neural Network." NIPS Workshop, 2015.<br><br>
+							[3] Romero et al. "FitNets: Hints for Thin Deep Nets." ICLR, 2015.<br><br>
+							[4] Heo et al. "A Comprehensive Overhaul of Feature Distillation." ICCV, 2019.<br><br>
+
+							<b>Spurious Correlations & Group Robustness</b><br><br>
+							[5] Sagawa et al. "Distributionally Robust Neural Networks for Group Shifts." ICLR, 2020.<br><br>
+							[6] Kirichenko et al. "Last Layer Re-Training is Sufficient for Robustness to Spurious Correlations." ICLR, 2023.<br><br>
+							[7] LaBonte et al. "Not Only the Last-Layer Features for Spurious Correlations: All Layer Deep Feature Reweighting." arXiv:2409.14637, 2024.<br><br>
+
+							<b>Ensemble Knowledge Distillation</b><br><br>
+							[8] Kenfack et al. "Adaptive Group Robust Ensemble Knowledge Distillation." NeurIPS, 2024.<br><br>
+							[9] Du et al. "Agree to Disagree: Adaptive Ensemble Knowledge Distillation in Gradient Space." NeurIPS, 2020.<br><br>
+							[10] Du et al. "Unified and Effective Ensemble Knowledge Distillation." arXiv:2204.00548, 2022.<br><br>
+							[11] You et al. "Learning from Multiple Teacher Networks." KDD, 2017.<br><br>
+							[12] Fukuda et al. "Efficient Knowledge Distillation from an Ensemble of Teachers." Interspeech, 2017.<br><br>
+							[13] Zhang et al. "Confidence-Aware Multi-Teacher Knowledge Distillation." ICASSP, 2022.<br><br>
+							[14] Ko et al. "Fair-Ensemble: When Fairness Naturally Emerges from Deep Ensembling." arXiv:2303.00586, 2023.<br><br>
+
+							<b>Bias Transfer in Distillation</b><br><br>
+							[15] Lukasik et al. "What's Left After Distillation? How Knowledge Transfer Impacts Fairness and Bias." TMLR, 2025.<br><br>
+							[16] Hooker et al. "Characterising Bias in Compressed Models." arXiv:2010.03058, 2020.<br><br>
+							[17] "Do Students Debias Like Teachers? On the Distillability of Bias Mitigation Methods." arXiv:2510.26038, 2025.<br><br>
+
+							<b>Recent Advances</b><br><br>
+							[18] "Revisiting Intermediate-Layer Matching in Knowledge Distillation." arXiv:2502.04499, 2025.<br><br>
+							[19] "Biased Teacher, Balanced Student: Knowledge Distillation for Long-Tailed Recognition." arXiv:2506.18496, 2025.<br><br>
 						</div>
 		    </div>
 		    <div class="margin-right-block">
-            <!-- margin notes for reference block here -->
 		    </div>
 		</div>
 

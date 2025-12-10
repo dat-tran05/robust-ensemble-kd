@@ -62,7 +62,7 @@ $$
 
 Figure 1 illustrates this: classic averaging yields a direction dominated by biased teachers, while adaptive weighting prioritizes the least biased models.
 
-![Figure 1: AGRE-KD gradient weighting illustration showing how teachers aligned with the biased direction are downweighted while those that deviate are upweighted. Adapted from Kenfack et al. (2025).](../../blog/images/weighting.png)
+![Figure 1: AGRE-KD gradient weighting illustration showing how teachers aligned with the biased direction are downweighted while those that deviate are upweighted. Figure from Kenfack et al. (2025).](../../blog/images/weighting.png)
 
 AGRE-KD uses teachers debiased via **Deep Feature Reweighting (DFR)** (Kirichenko et al., 2022). DFR makes a critical observation: even biased models learn useful core features alongside spurious ones. The problem is primarily in the final classifier layer, which over-weights spurious correlations. By freezing the backbone and retraining only the last layer on balanced data, DFR achieves strong WGA with minimal compute. This "last layer retraining is sufficient" insight has been influential in the robustness literature.
 
