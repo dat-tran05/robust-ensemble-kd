@@ -12,9 +12,9 @@ Ensemble methods can improve worst-case group performance by combining diverse m
 
 **AGRE-KD** (Kenfack et al., 2025) addresses this through gradient-based teacher weighting: rather than equally averaging predictions, it downweights teachers whose gradients align with a biased reference model. This achieves state-of-the-art worst-group accuracy on benchmarks like Waterbirds. However, AGRE-KD distills only teacher logits—the authors explicitly note that feature distillation remains an open direction for future work.
 
-This work investigates that direction. We extend AGRE-KD with a feature distillation term and explore whether intermediate representations can provide additional debiasing signal beyond logits alone.
+This work investigates that direction. We hypothesize that extending AGRE-KD with feature distillation, matching intermediate representations between teachers and student, can transfer additional debiasing signal beyond logits alone, further improving worst-group accuracy.
 
-Our experiments show that feature distillation provides modest but consistent improvement (+0.95% worst-group accuracy) with notably reduced variance across trials (±0.36% vs ±1.06%). We also find that these gains are constrained by how teachers are debiased—specifically, Deep Feature Reweighting (DFR) affects only the classifier layer while leaving backbone features unchanged. This analysis clarifies when feature distillation helps and suggests that stronger gains may require debiasing methods that operate on the full network, not just the classifier.
+Our experiments show that feature distillation provides modest but consistent improvement (+0.95% worst-group accuracy) with notably reduced variance across trials (±0.36% vs ±1.06%). We also find that these gains are constrained by how teachers are debiased. Specifically, Deep Feature Reweighting (DFR) affects only the classifier layer while leaving backbone features unchanged. This analysis clarifies when feature distillation helps and suggests that stronger gains may require debiasing methods that operate on the full network, not just the classifier.
 
 ---
 
@@ -36,11 +36,11 @@ $$
 
 Higher temperatures produce softer distributions, revealing more information about inter-class relationships.
 
-### Ensemble Distillation & Bias Amplification
+### Ensemble Knowledge Distillation
 
-Ensemble distillation extends KD by averaging predictions from multiple teachers, typically producing more robust students. However, when teachers share similar biases—even partially—simple averaging can reinforce these biases.
+Ensemble distillation extends KD by aggregating predictions from multiple teachers into a single student (You et al., 2017). Several methods address how to best combine teacher knowledge: Fukuda et al. (2017) randomly select teachers during mini-batch training to capture complementary knowledge, Du et al. (2020) use multi-objective optimization in gradient space to handle conflicting teacher gradients, and Zhang et al. (2022) weight teachers by prediction confidence. However, these approaches primarily target average accuracy improvements rather than group robustness.
 
-Kenfack et al. (2025) demonstrated this **bias amplification** effect: a student distilled from debiased teachers can achieve *worse* WGA than the teachers themselves. The shared biases get amplified through the averaging process.
+Deep ensembles naturally improve worst-group accuracy through model diversity (Ko et al., 2023), but whether these benefits transfer through distillation remained unclear until recently. Studies on bias in single-teacher KD revealed that teacher errors can amplify during distillation—students may become *more* biased than their teachers due to reduced model capacity (Lukasik et al., 2023; Hooker et al., 2020). This effect is exacerbated in ensemble settings: when teachers share similar biases, simple averaging of their outputs reinforces rather than cancels these biases, causing the consensus gradient direction to minimize average error at the expense of minority groups. Addressing this bias amplification problem requires moving beyond simple averaging to adaptive teacher weighting.
 
 ### AGRE-KD: Gradient-Based Teacher Weighting
 
@@ -208,7 +208,7 @@ We extract features from the penultimate layer (after global average pooling, be
 
 Importantly, this feature distillation benefit is orthogonal to the gradient-based teacher weighting. AGRE-KD maintains a consistent ~0.7% advantage over simple averaging (AVER) across all γ values tested:
 
-| γ    | AGRE-KD | AVER   | Δ      |
+| γ   | AGRE-KD | AVER   | Δ     |
 | ---- | ------- | ------ | ------ |
 | 0.00 | 84.62%  | 83.95% | +0.67% |
 | 0.25 | 85.20%  | 84.42% | +0.78% |
@@ -301,14 +301,14 @@ This finding reinforces that for group-robust distillation, the penultimate laye
 
 ### Summary of Results
 
-| Method | Best γ | WGA (%) | Avg Acc (%) | n |
-| ------ | ------ | ------- | ----------- | - |
-| **AGRE-KD + Features** | 0.50 | **85.57 ± 0.36** | 91.82 ± 0.47 | 3 |
-| Disagree-Weight | 0.50 | 85.31 ± 0.39 | 91.65 ± 0.52 | 3 |
-| AGRE-KD Baseline | 0.00 | 84.62 ± 1.06 | 91.42 ± 0.68 | 4 |
-| AVER + Features | 0.50 | 84.89 ± 0.56 | 92.15 ± 0.41 | 3 |
-| AVER Baseline | 0.00 | 83.95 ± 0.95 | 92.79 ± 0.53 | 4 |
-| Combined (α<1) | 0.25 | 84.16 ± 1.01 | 92.34 ± 0.62 | 3 |
+| Method                       | Best γ | WGA (%)                 | Avg Acc (%)   | n |
+| ---------------------------- | ------- | ----------------------- | ------------- | - |
+| **AGRE-KD + Features** | 0.50    | **85.57 ± 0.36** | 91.82 ± 0.47 | 3 |
+| Disagree-Weight              | 0.50    | 85.31 ± 0.39           | 91.65 ± 0.52 | 3 |
+| AGRE-KD Baseline             | 0.00    | 84.62 ± 1.06           | 91.42 ± 0.68 | 4 |
+| AVER + Features              | 0.50    | 84.89 ± 0.56           | 92.15 ± 0.41 | 3 |
+| AVER Baseline                | 0.00    | 83.95 ± 0.95           | 92.79 ± 0.53 | 4 |
+| Combined (α<1)              | 0.25    | 84.16 ± 1.01           | 92.34 ± 0.62 | 3 |
 
 ![Figure 5: Summary of results by method. Best result (AGRE-KD + Features) highlighted in green; baseline methods highlighted in blue.](../../blog/images/results_table_consolidated.png)
 
@@ -351,11 +351,8 @@ The central insight from our analysis is that the limited gains stem from a fund
 These findings clarify the conditions under which feature distillation would be more effective for group-robust knowledge distillation. Several directions warrant future exploration:
 
 1. **Backbone-level debiasing**: Methods like all-layer DFR (LaBonte et al., 2024) that modify backbone features, not just classifiers, could provide genuinely debiased features to distill.
-
 2. **Group-aware distillation losses**: Recent work on long-tailed KD suggests decomposing distillation by group and rebalancing explicitly (arXiv:2506.18496)—an approach that could complement AGRE-KD's sample-wise weighting with group-level balancing.
-
 3. **Temperature tuning for fairness**: Interestingly, research on distillation and fairness suggests that higher distillation temperatures can improve group fairness metrics—students at T=5-10 can become fairer than their teachers (Lukasik et al., 2025). While we used τ=4.0 throughout, systematically exploring temperature's effect on worst-group accuracy presents another avenue for improving group-robust distillation.
-
 4. **Architecturally diverse ensembles**: Teachers with genuinely different backbones would provide diverse feature representations that disagreement-based weighting could exploit.
 
 With additional compute resources, extending this analysis to other spurious correlation benchmarks (CelebA, MultiNLI) and larger ensemble sizes would further validate these insights.
@@ -390,9 +387,19 @@ With additional compute resources, extending this analysis to other spurious cor
 
 [10] Du et al. "Unified and Effective Ensemble Knowledge Distillation." arXiv:2204.00548, 2022.
 
+[15] You et al. "Learning from Multiple Teacher Networks." KDD, 2017.
+
+[16] Fukuda et al. "Efficient Knowledge Distillation from an Ensemble of Teachers." Interspeech, 2017.
+
+[17] Zhang et al. "Confidence-Aware Multi-Teacher Knowledge Distillation." ICASSP, 2022.
+
+[18] Ko et al. "Fair-Ensemble: When Fairness Naturally Emerges from Deep Ensembling." arXiv:2303.00586, 2023.
+
 ### Bias Transfer in Distillation
 
 [11] Lukasik et al. "What's Left After Distillation? How Knowledge Transfer Impacts Fairness and Bias." TMLR, 2025.
+
+[19] Hooker et al. "Characterising Bias in Compressed Models." arXiv:2010.03058, 2020.
 
 [12] "Do Students Debias Like Teachers? On the Distillability of Bias Mitigation Methods." arXiv:2510.26038, 2025.
 
@@ -401,4 +408,3 @@ With additional compute resources, extending this analysis to other spurious cor
 [13] "Revisiting Intermediate-Layer Matching in Knowledge Distillation." arXiv:2502.04499, 2025.
 
 [14] "Biased Teacher, Balanced Student: Knowledge Distillation for Long-Tailed Recognition." arXiv:2506.18496, 2025.
-
