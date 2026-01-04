@@ -1,5 +1,9 @@
 # Feature Distillation for Group-Robust Knowledge Distillation
 
+*By Dat Tran and Priscilla Leang*
+
+**[Read the full report →](blog/index.html)**
+
 ## Overview
 
 This project extends [AGRE-KD](https://arxiv.org/abs/2306.17193) (Adaptive Group Robust Ensemble Knowledge Distillation) by investigating **feature distillation** for improving worst-group accuracy in knowledge distillation.
@@ -40,22 +44,23 @@ This project extends [AGRE-KD](https://arxiv.org/abs/2306.17193) (Adaptive Group
 
 ## Project Structure
 
-```
+```text
 ├── code/
 │   ├── train.py          # Training loop
 │   ├── losses.py         # Loss functions (KD, feature distillation)
 │   ├── models.py         # Model definitions
 │   └── notebooks/        # Experiment notebooks
-├── docs/
-│   ├── experiment_summary.md   # Concise results summary
-│   ├── project_report.md       # Detailed report
-│   └── experimental_results.md # Full experimental log
+├── blog/                 # Project report (HTML)
+│   └── index.html
+└── docs/
+    └── experimental_results.md
 ```
 
 ## Citation
 
 Based on:
-```
+
+```bibtex
 @article{kenfack2025agrekd,
   title={AGRE-KD: Adaptive Group Robust Ensemble Knowledge Distillation},
   author={Kenfack, et al.},
