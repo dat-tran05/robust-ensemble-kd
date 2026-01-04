@@ -50,7 +50,7 @@ Student Model (target: 85%+ WGA)
 ## 2. Directory Structure
 
 ```
-light-code/
+code/
 ├── config.py                    # Hyperparameter configuration
 ├── data.py                      # Waterbirds dataset loader
 ├── models.py                    # ResNet architectures with feature extraction

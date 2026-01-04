@@ -123,7 +123,7 @@ From page 3:
 
 Your codebase already extracts all intermediate layers:
 
-**`light-code/models.py` (lines 82-89)**:
+**`code/models.py` (lines 82-89)**:
 ```python
 features = {
     'layer1': l1,      # 56×56 spatial, 64→256 channels
@@ -134,7 +134,7 @@ features = {
 }
 ```
 
-**`light-code/models.py` (lines 139-157)**: `create_feature_adapter()` handles dimension matching for all layers.
+**`code/models.py` (lines 139-157)**: `create_feature_adapter()` handles dimension matching for all layers.
 
 ### 5.2 Layer Dimensions (ResNet-18 → ResNet-50)
 

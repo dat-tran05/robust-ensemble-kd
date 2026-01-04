@@ -1,7 +1,5 @@
 # Feature Distillation for Group-Robust Knowledge Distillation
 
-**6.7960 Deep Learning, Fall 2025**
-
 ## Overview
 
 This project extends [AGRE-KD](https://arxiv.org/abs/2306.17193) (Adaptive Group Robust Ensemble Knowledge Distillation) by investigating **feature distillation** for improving worst-group accuracy in knowledge distillation.
@@ -43,7 +41,7 @@ This project extends [AGRE-KD](https://arxiv.org/abs/2306.17193) (Adaptive Group
 ## Project Structure
 
 ```
-├── light-code/
+├── code/
 │   ├── train.py          # Training loop
 │   ├── losses.py         # Loss functions (KD, feature distillation)
 │   ├── models.py         # Model definitions

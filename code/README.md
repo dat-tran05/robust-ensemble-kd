@@ -13,7 +13,7 @@ This notebook handles everything: setup, data download, teacher preparation, and
 ```bash
 # 1. Clone and setup
 git clone https://github.com/YOUR_USERNAME/robust-ensemble-kd.git
-cd robust-ensemble-kd/light-code
+cd robust-ensemble-kd/code
 pip install torch torchvision wilds tqdm pandas numpy matplotlib scikit-learn
 
 # 2. Download Waterbirds data
@@ -36,7 +36,7 @@ python train.py --mode student \
 ## 📁 Project Structure
 
 ```
-light-code/
+code/
 ├── data.py              # Waterbirds dataloader with group labels
 ├── models.py            # ResNet with feature extraction hooks
 ├── losses.py            # KD, feature, AGRE-KD losses
@@ -63,7 +63,7 @@ drive.mount('/content/drive')
 
 # Clone repo
 !git clone https://github.com/YOUR_USERNAME/robust-ensemble-kd.git /content/repo
-%cd /content/repo/light-code
+%cd /content/repo/code
 ```
 
 ### Step 2: Download DFR Checkpoints (~5 min)
